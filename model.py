@@ -51,7 +51,7 @@ class RatioModel:
 
     @property
     def default_optimizer(self):
-        default_optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+        default_optimizer = tf.keras.optimizers.Adam()
         return default_optimizer
 
     def fit_dataset(self, ds: RatioDataset, epochs=10):
@@ -83,28 +83,6 @@ class RatioModel:
     def _build_input_unparameterised(theta_0, theta_1, x):
         return np.atleast_2d(x).T
 
-
-def prior_trainable(kernel_size, bias_size=0, dtype=None):
-    # Specify the prior over `keras.layers.Dense` `kernel` and `bias`.
-    n = kernel_size + bias_size
-    return tf.keras.Sequential([
-        tfp.layers.VariableLayer(n, dtype=dtype),
-        tfp.layers.DistributionLambda(
-            lambda t: tfd.Independent(
-                tfd.Normal(loc=t, scale=1), reinterpreted_batch_ndims=1)),
-    ])
-
-
-def posterior_mean_field(kernel_size, bias_size=0, dtype=None):
-    # Specify the surrogate posterior over `keras.layers.Dense` `kernel` and `bias`.
-    n = kernel_size + bias_size
-    c = np.log(np.expm1(1.))
-    return tf.keras.Sequential([
-        tfp.layers.VariableLayer(2 * n, dtype=dtype),
-        tfp.layers.DistributionLambda(
-            lambda t: tfd.Independent(
-                tfd.Normal(loc=t[..., :n], scale=1e-5 + tf.nn.softplus(c + t[..., n:])), reinterpreted_batch_ndims=1)),
-    ])
 
 
 class BayesianRatioModel(RatioModel):

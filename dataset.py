@@ -19,6 +19,10 @@ class DataSet:
     def __add__(self, other):
         return self.__class__(self.samples + other.samples)
 
+    def __getattr__(self, item):
+        if item in self.dataframe.columns:
+            return getattr(self.dataframe, item).values
+
     def shuffle(self):
         shuffle(self.samples)
 

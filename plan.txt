@@ -1,0 +1,38 @@
+
+model.py
+
+    RatioModel(tf.keras.Model)
+
+        Methods
+            init
+                x_dim: float
+                theta_dim: float
+                num_samples: float
+            fit_dataset
+                dataset: RatioDataset
+                kwargs: kwargs
+
+        Abstract Methods
+            build_input
+                theta_0: float or array
+                theta_1: float or array
+                x: array
+
+
+    UnparameterisedRatioModel(RatioModel)
+
+        Methods
+            build_input
+                theta_0: float or array
+                theta_1: float or array
+                x: array
+
+    SingleParameterisedRatioModel(RatioModel)
+
+        Methods
+            build_input
+                theta_0: float or array
+                theta_1: float or array
+                x: array
+
+    Single
