@@ -39,7 +39,7 @@ class RatioModel:
     @property
     def default_callbacks(self):
         default_callbacks = [
-            tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=2),
+            tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=10),
             tf.keras.callbacks.TensorBoard()
         ]
         return default_callbacks
@@ -51,8 +51,7 @@ class RatioModel:
 
     @property
     def default_optimizer(self):
-        # default_optimizer = optimizers.Adam()
-        default_optimizer = 'rmsprop'
+        default_optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
         return default_optimizer
 
     def fit_dataset(self, ds: RatioDataset, epochs=10):
@@ -110,25 +109,36 @@ def posterior_mean_field(kernel_size, bias_size=0, dtype=None):
 
 class BayesianRatioModel(RatioModel):
 
-    @property
-    def default_loss(self):
-        return lambda y_true, model_out: tf.keras.losses.binary_crossentropy(y_true, model_out.probs)
+    # @property
+    # def default_optimizer(self):
+
+    # @property
+    # def default_loss(self):
+    #     return lambda y_true, model_out: tf.keras.losses.binary_crossentropy(y_true, model_out.probs)
 
     @staticmethod
     def default_tf_model(input_dim, hidden_dims=(10, 10), activation='relu'):
+        num_samples = int(0.8 * 2e5)
+
+        kl_divergence_function = (lambda q, p, _: tfd.kl_divergence(q, p) /  # pylint: disable=g-long-lambda
+                                                  tf.cast(num_samples, dtype=tf.float32))
+
         tf_model = tf.keras.Sequential(layers=[
-            tfp.layers.DenseVariational(hidden_dims[0],
-                                        make_posterior_fn=posterior_mean_field,
-                                        make_prior_fn=prior_trainable),
-            tf.keras.layers.Activation(activation),
-            tfp.layers.DenseVariational(hidden_dims[1],
-                                        make_posterior_fn=posterior_mean_field,
-                                        make_prior_fn=prior_trainable),
-            tf.keras.layers.Activation(activation),
-            tfp.layers.DenseVariational(1,
-                                        make_posterior_fn=posterior_mean_field,
-                                        make_prior_fn=prior_trainable),
-            tfp.layers.DistributionLambda(lambda t: tfd.Bernoulli(logits=t))
+            tfp.layers.DenseFlipout(hidden_dims[0],
+                                    kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    kernel_divergence_fn=kl_divergence_function,
+                                    activation=activation),
+            tfp.layers.DenseFlipout(hidden_dims[1],
+                                    kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    kernel_divergence_fn=kl_divergence_function,
+                                    activation=activation),
+            tfp.layers.DenseFlipout(1,
+                                    kernel_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                                    kernel_divergence_fn=kl_divergence_function,
+                                    activation='sigmoid'),
         ])
         return tf_model
 
@@ -138,37 +148,55 @@ def run_tensorboard():
 
 
 if __name__ == '__main__':
-    from dist import triple_mixture
+    from dist import triple_mixture, ideal_classifier_probs, negative_log_likelihood_ratio
     import matplotlib.pyplot as plt
+    import pandas as pd
+
+    simulator_func = triple_mixture
+    theta_0 = 0.05
+    theta_1 = 0
 
     ds = RatioDataset(
         n_thetas=1,
         n_samples_per_theta=int(1e5),
-        simulator_func=triple_mixture,
-        theta_0_dist=0.05,
-        theta_1_dist=0
+        simulator_func=simulator_func,
+        theta_0_dist=theta_0,
+        theta_1_dist=theta_1
     )
 
     f, axarr = plt.subplots(2)
     x = np.linspace(-5, 5, int(1e4))
 
     model_types = [
-        ('Regular', RatioModel),
-        ('Bayesian', BayesianRatioModel)
+        ('Regular', RatioModel, 100),
+        ('Bayesian', BayesianRatioModel, 100)
     ]
 
-    for name, model_cls in model_types:
-        clf = model_cls(x_dim=1, theta_dim=1, parameterised=False, hidden_dims=(10, 10))
-        clf.fit_dataset(ds, epochs=100)
-        clf.tf_model.predict_classes(x)
-        y_pred_proba = clf.tf_model.predict_proba(x)
-        y_pred = clf.tf_model.predict_classes(x)
-        lr_estimate = y_pred_proba / (1 - y_pred_proba)
-        nll = -np.log(lr_estimate)
-        axarr[0].plot(x, y_pred_proba, label=f'Probability ({name})')
-        axarr[0].plot(x, y_pred, label=f'Class ({name})')
-        axarr[1].plot(x, nll, label=f'NLLR ({name})')
-    axarr[0].legend()
-    axarr[1].legend()
+    df = pd.DataFrame(index=x)
+    models = []
+
+    for name, model_cls, epochs in model_types:
+        clf = model_cls(x_dim=1,
+                        theta_dim=1,
+                        parameterised=False,
+                        hidden_dims=(10, 10))
+
+        clf.fit_dataset(ds, epochs=epochs)
+        models.append(clf)
+
+        y_pred = clf.tf_model.predict_proba(x)
+        lr_estimate = y_pred / (1 - y_pred)
+        nllr = -np.log(lr_estimate)
+
+        df[f'y_pred ({name})'] = y_pred.squeeze()
+        df[f'NLLR ({name})'] = nllr.squeeze()
+
+    y_pred_ideal = ideal_classifier_probs(x, simulator_func, theta_0, theta_1)
+    df['y_pred (Ideal)'] = y_pred_ideal
+    df['NLLR (True)'] = negative_log_likelihood_ratio(x, simulator_func, theta_0, theta_1)
+
+    for i, variable in enumerate(['y_pred', 'NLLR']):
+        cols = list(filter(lambda x: variable in x, df.columns))
+        df[cols].plot(ax=axarr[i])
     plt.show()
     # run_tensorboard()
