@@ -23,6 +23,9 @@ class DataSet:
         if item in self.dataframe.columns:
             return getattr(self.dataframe, item).values
 
+    def __len__(self):
+        return len(self.samples)
+
     def shuffle(self):
         shuffle(self.samples)
 

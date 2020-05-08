@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from dataset import RatioDataset
 from dist import triple_mixture, ideal_classifier_probs, negative_log_likelihood_ratio
-from new_model import FrequentistUnparameterisedRatioModel, BayesianUnparameterisedRatioModel
+from model import FrequentistUnparameterisedRatioModel, BayesianUnparameterisedRatioModel
 
 # Build dataset
 simulator_func = triple_mixture
@@ -22,7 +22,7 @@ ds = RatioDataset(
 )
 
 # hyperparams
-epochs = 2
+epochs = 10
 patience = 10
 lr = 1e-3
 validation_split = 0.1
@@ -41,13 +41,14 @@ model_types = [
     ('Bayesian', BayesianUnparameterisedRatioModel)
 ]
 
-f, axarr = plt.subplots(2)
+# Evaluate over [-5, 5]
 x = np.linspace(-5, 5, int(1e4))
 df = pd.DataFrame(index=x)
 models = []
 
 for name, model_cls in model_types:
-    clf = model_cls(x_dim=1, num_samples=num_samples)
+    # fit model
+    clf = model_cls(x_dim=1, num_samples=num_samples, activation='tanh')
     clf.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
         loss=tf.keras.losses.BinaryCrossentropy(),
@@ -57,17 +58,20 @@ for name, model_cls in model_types:
                     validation_split=validation_split,
                     callbacks=callbacks)
     models.append(clf)
-    y_pred = clf.predict(x)
-    lr_estimate = y_pred / (1 - y_pred)
-    nllr = -np.log(lr_estimate)
 
+    # predict over x
+    y_pred = clf.predict(x, theta_0, theta_1)
+    lr_estimate = clf.predict_likelihood_ratio(x, theta_0, theta_1)
+    nllr = -np.log(lr_estimate)
     df[f'y_pred ({name})'] = y_pred.squeeze()
     df[f'NLLR ({name})'] = nllr.squeeze()
 
+# Find ideal classifier probabilities, and true likelihood ratio
 y_pred_ideal = ideal_classifier_probs(x, simulator_func, theta_0, theta_1)
 df['y_pred (Ideal)'] = y_pred_ideal
 df['NLLR (True)'] = negative_log_likelihood_ratio(x, simulator_func, theta_0, theta_1)
 
+f, axarr = plt.subplots(2)
 for i, variable in enumerate(['y_pred', 'NLLR']):
     cols = list(filter(lambda x: variable in x, df.columns))
     df[cols].plot(ax=axarr[i])
