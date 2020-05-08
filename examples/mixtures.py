@@ -22,7 +22,7 @@ ds = RatioDataset(
 )
 
 # hyperparams
-epochs = 10
+epochs = 100
 patience = 10
 lr = 1e-3
 validation_split = 0.1
@@ -44,20 +44,21 @@ model_types = [
 # Evaluate over [-5, 5]
 x = np.linspace(-5, 5, int(1e4))
 df = pd.DataFrame(index=x)
-models = []
+models = {}
 
 for name, model_cls in model_types:
     # fit model
-    clf = model_cls(x_dim=1, num_samples=num_samples, activation='tanh')
+    clf = model_cls(x_dim=1, num_samples=num_samples, activation='relu')
     clf.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
         loss=tf.keras.losses.BinaryCrossentropy(),
+        metrics=['accuracy']
     )
     clf.fit_dataset(ds,
                     epochs=epochs,
                     validation_split=validation_split,
                     callbacks=callbacks)
-    models.append(clf)
+    models[name] = clf
 
     # predict over x
     y_pred = clf.predict(x, theta_0, theta_1)
@@ -71,8 +72,25 @@ y_pred_ideal = ideal_classifier_probs(x, simulator_func, theta_0, theta_1)
 df['y_pred (Ideal)'] = y_pred_ideal
 df['NLLR (True)'] = negative_log_likelihood_ratio(x, simulator_func, theta_0, theta_1)
 
+# Plot results
 f, axarr = plt.subplots(2)
 for i, variable in enumerate(['y_pred', 'NLLR']):
     cols = list(filter(lambda x: variable in x, df.columns))
     df[cols].plot(ax=axarr[i])
+
+
+
+f, axarr = plt.subplots(2, sharex=True)
+for y in (0, 1):
+    filter_ds = ds.filter(ds.y == y)
+    df_calib = pd.DataFrame()
+    for name, clf in models.items():
+        pred = clf.predict_dataset(filter_ds)
+        col_name = f'{name} (y={y})'
+        df_calib[col_name] = pred.squeeze()
+        df_calib[col_name].plot.kde(ax=axarr[y], label=col_name)
+        axarr[y].legend()
+    plt.legend()
+
+
 plt.show()

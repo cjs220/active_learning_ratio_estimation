@@ -35,10 +35,16 @@ class RatioModel(tf.keras.Model):
         model_input = self.build_input(x, theta_0, theta_1)
         return super().predict(model_input, **kwargs)
 
+    def predict_dataset(self, ds, **kwargs):
+        return self.predict(ds.x, ds.theta_0, ds.theta_1, **kwargs)
+
     def predict_likelihood_ratio(self, x, theta_0, theta_1, **kwargs):
         y_pred = self.predict(x, theta_0, theta_1, **kwargs)
         likelihood_ratio = y_pred / (1 - y_pred)
         return likelihood_ratio
+
+    def predict_likelihood_ratio_dataset(self, ds, **kwargs):
+        return self.predict_likelihood_ratio(ds.x, ds.theta, ds.theta_1, **kwargs)
 
     def build_input(self, x, theta_1, theta_0):
         raise NotImplementedError

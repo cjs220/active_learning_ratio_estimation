@@ -29,6 +29,10 @@ class DataSet:
     def shuffle(self):
         shuffle(self.samples)
 
+    def filter(self, bool_arr):
+        filtered_df = self.dataframe[bool_arr]
+        return self.from_dataframe(filtered_df)
+
     @property
     def dataframe(self):
         return pd.DataFrame(self.samples)
@@ -39,6 +43,10 @@ class DataSet:
     @classmethod
     def from_csv(cls, path_or_buf):
         df = pd.read_csv(path_or_buf)
+        return cls.from_dataframe(df)
+
+    @classmethod
+    def from_dataframe(cls, df):
         samples = [x[1].to_dict() for x in df.iterrows()]
         return DataSet(samples)
 
