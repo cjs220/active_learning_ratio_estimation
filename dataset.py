@@ -1,3 +1,4 @@
+from numbers import Number
 from typing import List, Dict, Callable, Union
 from random import shuffle
 
@@ -54,11 +55,11 @@ class DataSet:
 class RatioDataset(DataSet):
 
     def __init__(self,
-                 n_thetas: int,
                  n_samples_per_theta: int,
                  simulator_func: Callable,
-                 theta_0_dist: Union[tfd.Distribution, float, np.array],
-                 theta_1_dist: Union[tfd.Distribution, float, np.array]):
+                 theta_0_dist: Union[tfd.Distribution, Number, np.array],
+                 theta_1_dist: Union[tfd.Distribution, Number, np.array],
+                 n_thetas: int = 1):
 
         theta_0 = self._choose_theta(theta_0_dist, n_thetas)
         theta_1 = self._choose_theta(theta_1_dist, n_thetas)
@@ -73,11 +74,18 @@ class RatioDataset(DataSet):
         super().__init__(samples)
 
     @staticmethod
-    def _choose_theta(dist, n_samples):
-        try:
+    def _choose_theta(dist, n_samples) -> np.array:
+        if hasattr(dist, 'sample'):
             theta = dist.sample(n_samples).numpy()
-        except AttributeError:
-            theta = np.array([dist] * n_samples)
+        elif isinstance(dist, Number):
+                theta = np.array([dist] * n_samples)
+        else:
+            if len(dist.shape) == 2:
+                # dist is an array of thetas
+                theta = dist
+            else:
+                assert len(dist.shape == 1)
+                theta = np.stack([dist for _ in range(n_samples)], 0)
         return theta
 
     @staticmethod
@@ -85,4 +93,3 @@ class RatioDataset(DataSet):
         simulator = simulator_func(theta)
         x = simulator.sample(n_samples_per_theta).numpy()
         return x
-
