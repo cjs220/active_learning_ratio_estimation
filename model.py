@@ -10,9 +10,23 @@ from dataset import RatioDataset
 tfd = tfp.distributions
 
 
-class RatioModel:
+def build_input_unparameterised(x, theta_0, theta_1):
+    return x
 
+
+def build_input_single_parameterised(x, theta_0, theta_1):
+    # TODO
+    return 0
+
+
+def build_input_double_parameterised(x, theta_0, theta_1):
+    # TODO
+    return 0
+
+
+class RatioModel:
     def __init__(self,
+                 parameterisation,
                  x_dim,
                  theta_dim,
                  num_samples,
@@ -28,9 +42,19 @@ class RatioModel:
         self.n_hidden = n_hidden
         self.activation = activation
         self.output_activation = output_activation
+
         self.calibration = calibration
         if calibration is not None:
             assert calibration in ('isotonic', 'sigmoid')
+
+        self.parameterisation = parameterisation
+        self.build_input = {
+            0: build_input_unparameterised,
+            1: build_input_single_parameterised,
+            2: build_input_double_parameterised
+        }[parameterisation]
+        self.input_dim = x_dim + parameterisation*theta_dim
+
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else dict()
         self.fit_kwargs = fit_kwargs if fit_kwargs is not None else dict()
         self.fit_kwargs['callbacks'] = self.compile_kwargs.pop('callbacks', None)
@@ -94,56 +118,15 @@ class RatioModel:
     def predict_likelihood_ratio_dataset(self, dataset):
         return self.predict_likelihood_ratio(dataset.x, dataset.theta, dataset.theta_1)
 
-    @property
-    def input_dim(self):
-        raise NotImplementedError
 
-    def build_input(self, x, theta_1, theta_0):
-        raise NotImplementedError
-
-
-class UnparameterisedRatioModel(RatioModel):
-
-    @property
-    def input_dim(self):
-        return self.x_dim
-
-    def build_input(self, x, theta_1, theta_0):
-        if len(x.shape) == 1:
-            x = x.reshape(-1, 1)
-        return x
-
-
-class SingleParameterisedRatioModel(RatioModel):
-
-    @property
-    def input_dim(self):
-        return self.x_dim + self.theta_dim
-
-    def build_input(self, x, theta_1, theta_0):
-        # TODO
-        pass
-
-
-class DoubleParameterisedRatioModel(RatioModel):
-
-    @property
-    def input_dim(self):
-        return self.x_dim + 2 * self.theta_dim
-
-    def build_input(self, x, theta_1, theta_0):
-        # TODO
-        pass
-
-
-class FrequentistMixin:
+class RegularRatioModel(RatioModel):
 
     def dense_layer(self, units, activation):
         return tf.keras.layers.Dense(units=units, activation=activation)
 
 
-class BayesianMixin:
-    num_samples = None
+class BayesianRatioModel(RatioModel):
+    prediction_mc_samples = 1000
 
     def kl_divergence_function(self, q, p, _):
         return tfd.kl_divergence(q, p) / tf.cast(self.num_samples, dtype=tf.float32)
@@ -155,10 +138,18 @@ class BayesianMixin:
                                        kernel_divergence_fn=self.kl_divergence_function,
                                        activation=activation)
 
+    def _mc_sample(self, method_name, x, theta_0, theta_1, n_samples):
+        n_samples = n_samples or self.prediction_mc_samples
+        samples = np.array([
+            getattr(super(self.__class__, self), method_name)(x, theta_0, theta_1)
+            for _ in range(n_samples)
+        ])
+        return samples
 
-class FrequentistUnparameterisedRatioModel(UnparameterisedRatioModel, FrequentistMixin):
-    pass
+    def predict(self, x, theta_0, theta_1, n_samples=None):
+        preds = self._mc_sample('predict', x, theta_0, theta_1, n_samples)
+        return np.around(np.mean(preds, axis=0))
 
-
-class BayesianUnparameterisedRatioModel(UnparameterisedRatioModel, BayesianMixin):
-    pass
+    def predict_proba(self, x, theta_0, theta_1, n_samples=None):
+        preds = self._mc_sample('predict_proba', x, theta_0, theta_1, n_samples)
+        return np.mean(preds, axis=0)

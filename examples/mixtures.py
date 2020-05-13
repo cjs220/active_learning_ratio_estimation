@@ -8,7 +8,7 @@ tfd = tfp.distributions
 
 from dataset import RatioDataset
 from util import ideal_classifier_probs, negative_log_likelihood_ratio
-from model import FrequentistUnparameterisedRatioModel, BayesianUnparameterisedRatioModel
+from model import RegularRatioModel, BayesianRatioModel
 
 
 def triple_mixture(gamma):
@@ -43,8 +43,8 @@ def main():
     )
 
     # hyperparams
-    epochs = 2
-    patience = 10
+    epochs = 10
+    patience = 5
     lr = 1e-3
     validation_split = 0.1
     n_hidden = (10, 10)
@@ -68,9 +68,9 @@ def main():
 
     # Choose model types
     model_types = [
-        # ('Regular Calibrated', FrequentistUnparameterisedRatioModel, 'tanh', True),
-        # ('Regular Uncalibrated', FrequentistUnparameterisedRatioModel, 'tanh', False),
-        ('Bayesian', BayesianUnparameterisedRatioModel, 'relu', False)
+        ('Regular Calibrated', RegularRatioModel, 'tanh', True),
+        ('Regular Uncalibrated', RegularRatioModel, 'tanh', False),
+        ('Bayesian', BayesianRatioModel, 'relu', False)
     ]
 
     # Evaluate over [-5, 5]
@@ -82,7 +82,8 @@ def main():
         calibration = 'sigmoid' if calibrated else None
 
         # fit model
-        clf = model_cls(x_dim=1,
+        clf = model_cls(parameterisation=0,
+                        x_dim=1,
                         theta_dim=1,
                         num_samples=num_samples,
                         activation=activation,
