@@ -28,6 +28,7 @@ def triple_mixture(gamma):
     )
     return dist
 
+
 def main():
     # Build dataset
     theta_0 = 0.05
@@ -42,8 +43,8 @@ def main():
     )
 
     # hyperparams
-    epochs = 50
-    patience = 5
+    epochs = 2
+    patience = 10
     lr = 1e-3
     validation_split = 0.1
     n_hidden = (10, 10)
@@ -65,11 +66,11 @@ def main():
         verbose=2
     )
 
-
     # Choose model types
     model_types = [
-        ('Regular', FrequentistUnparameterisedRatioModel, 'tanh'),
-        ('Bayesian', BayesianUnparameterisedRatioModel, 'relu')
+        # ('Regular Calibrated', FrequentistUnparameterisedRatioModel, 'tanh', True),
+        # ('Regular Uncalibrated', FrequentistUnparameterisedRatioModel, 'tanh', False),
+        ('Bayesian', BayesianUnparameterisedRatioModel, 'relu', False)
     ]
 
     # Evaluate over [-5, 5]
@@ -77,30 +78,29 @@ def main():
     df = pd.DataFrame(index=x)
     models = {}
 
-    for name, model_cls, activation in model_types:
-        for calibrated in (True, False):
-            calibration = 'isotonic' if calibrated else None
+    for name, model_cls, activation, calibrated in model_types:
+        calibration = 'sigmoid' if calibrated else None
 
-            # fit model
-            clf = model_cls(x_dim=1,
-                            theta_dim=1,
-                            num_samples=num_samples,
-                            activation=activation,
-                            n_hidden=n_hidden,
-                            calibration=calibration,
-                            compile_kwargs=compile_kwargs,
-                            fit_kwargs=fit_kwargs)
-            clf.fit_dataset(ds)
-            models[name] = clf
+        # fit model
+        clf = model_cls(x_dim=1,
+                        theta_dim=1,
+                        num_samples=num_samples,
+                        activation=activation,
+                        n_hidden=n_hidden,
+                        calibration=calibration,
+                        compile_kwargs=compile_kwargs,
+                        fit_kwargs=fit_kwargs)
+        clf.fit_dataset(ds)
+        models[name] = clf
 
-            # predict over x
-            y_pred = clf.predict_proba(x, theta_0, theta_1)[:, 1]
-            lr_estimate = clf.predict_likelihood_ratio(x, theta_0, theta_1)
-            nllr = -np.log(lr_estimate)
-            calibration_label = 'Calibrated' if calibrated else 'Uncalibrated'
-            label = f'({name}, {calibration_label})'
-            df[f'y_pred {label}'] = y_pred.squeeze()
-            df[f'NLLR {label}'] = nllr.squeeze()
+        # predict over x
+        y_pred = clf.predict_proba(x, theta_0, theta_1)[:, 1]
+        lr_estimate = clf.predict_likelihood_ratio(x, theta_0, theta_1)
+        nllr = -np.log(lr_estimate)
+        calibration_label = 'Calibrated' if calibrated else 'Uncalibrated'
+        label = f'({name}, {calibration_label})'
+        df[f'y_pred {label}'] = y_pred.squeeze()
+        df[f'NLLR {label}'] = nllr.squeeze()
 
     # Find ideal classifier probabilities, and true likelihood ratio
     y_pred_ideal = ideal_classifier_probs(x, triple_mixture, theta_0, theta_1)
@@ -129,9 +129,7 @@ def main():
             df_calib[col_name] = pred.squeeze()
             df_calib[col_name].plot.kde(ax=axarr[y], label=col_name)
             axarr[y].legend()
-    plt.legend()
     plt.xlim([0.4, 0.6])
-
     plt.show()
 
 

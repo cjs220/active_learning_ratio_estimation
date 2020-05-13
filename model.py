@@ -29,12 +29,12 @@ class RatioModel:
         self.activation = activation
         self.output_activation = output_activation
         self.calibration = calibration
+        if calibration is not None:
+            assert calibration in ('isotonic', 'sigmoid')
         self.compile_kwargs = compile_kwargs if compile_kwargs is not None else dict()
         self.fit_kwargs = fit_kwargs if fit_kwargs is not None else dict()
+        self.fit_kwargs['callbacks'] = self.compile_kwargs.pop('callbacks', None)
         self.estimator = KerasClassifier(build_fn=self._build_fn, **fit_kwargs)
-        if self.calibrated:
-            assert calibration in ('sigmoid', 'isotonic')
-            self.estimator = CalibratedClassifierCV(base_estimator=self.estimator)
 
     def _build_fn(self):
         model = Sequential()
@@ -58,6 +58,14 @@ class RatioModel:
     def fit(self, x, theta_0, theta_1, y):
         model_input = self.build_input(x, theta_0, theta_1)
         self.estimator.fit(model_input, y)
+
+        if self.calibrated:
+            self.estimator = CalibratedClassifierCV(
+                base_estimator=self.estimator,
+                cv='prefit',
+                method=self.calibration
+            ).fit(model_input, y)
+
         return self
 
     def fit_dataset(self, dataset: RatioDataset):
@@ -121,7 +129,7 @@ class DoubleParameterisedRatioModel(RatioModel):
 
     @property
     def input_dim(self):
-        return self.x_dim + 2*self.theta_dim
+        return self.x_dim + 2 * self.theta_dim
 
     def build_input(self, x, theta_1, theta_0):
         # TODO
