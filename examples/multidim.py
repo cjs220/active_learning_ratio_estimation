@@ -4,8 +4,6 @@ import tensorflow_probability as tfp
 from sklearn.datasets import make_sparse_spd_matrix
 import corner
 
-from dataset import RatioDataset
-
 tfd = tfp.distributions
 plt.set_cmap("viridis")
 
