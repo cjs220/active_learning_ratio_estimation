@@ -5,6 +5,7 @@
 
 
 import sys
+from functools import partial
 
 sys.path.insert(0, '..')
 
@@ -23,13 +24,13 @@ from active_learning_ratio_estimation.dataset import RatioDataset
 from active_learning_ratio_estimation.util import ideal_classifier_probs, negative_log_likelihood_ratio
 from active_learning_ratio_estimation.model import RegularRatioModel, BayesianRatioModel
 
-get_ipython().run_line_magic('matplotlib', 'inline')
+# get_ipython().run_line_magic('matplotlib', 'inline')
 
 np.random.seed(0)
 tf.random.set_seed(0)
 
 
-# In[6]:
+#%%
 
 
 def multi_dim_toy_model(alpha, beta):
@@ -53,7 +54,11 @@ def multi_dim_toy_model(alpha, beta):
     transform = tf.linalg.LinearOperatorFullMatrix(R)
     bijector = tfp.bijectors.AffineLinearOperator(scale=transform)
     
-    return tfd.TransformedDistribution(distribution=z_distribution, bijector=bijector)
+    dist = tfd.TransformedDistribution(distribution=z_distribution, bijector=bijector)
+    dist.alpha = alpha
+    dist.beta = beta
+    dist.R = R
+    return dist
 
 
 # In[7]:
@@ -65,10 +70,24 @@ true_beta = -1
 true_dist = multi_dim_toy_model(alpha=1, beta=-1)
 X_true = true_dist.sample(500)
 fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
+# plt.show()
 
 
 # In[8]:
 
 
-# create dataset
+# find exact maximum likelihood
+approx_alpha = tf.Variable(tf.constant(0, dtype=tf.float32))
+approx_beta = tf.Variable(tf.constant(0, dtype=tf.float32))
+approx_dist = multi_dim_toy_model(alpha=approx_alpha, beta=approx_beta)
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+n_iter = 5
 
+for i in range(n_iter):
+    for X_i in X_true:
+        loss_fn = lambda: -approx_dist.log_prob(X_i)
+        optimizer.minimize(loss_fn, [approx_alpha, approx_beta])
+
+print(f'Exact MLE: alpha={approx_dist.alpha}, beta={approx_dist.beta}')
+
+pass
