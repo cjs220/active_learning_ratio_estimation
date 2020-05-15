@@ -1,58 +1,74 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[5]:
+
+
+import sys
+
+sys.path.insert(0, '..')
+
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
+import tensorflow as tf
 import tensorflow_probability as tfp
-from sklearn.datasets import make_sparse_spd_matrix
-import corner
 
 tfd = tfp.distributions
-plt.set_cmap("viridis")
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.datasets import make_sparse_spd_matrix
+from corner import corner
+
+from active_learning_ratio_estimation.dataset import RatioDataset
+from active_learning_ratio_estimation.util import ideal_classifier_probs, negative_log_likelihood_ratio
+from active_learning_ratio_estimation.model import RegularRatioModel, BayesianRatioModel
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+
+np.random.seed(0)
+tf.random.set_seed(0)
 
 
-class MultiDimDist:
-    DIM = 5
+# In[6]:
 
-    def __init__(self, alpha, beta, R=None):
-        self.alpha = alpha
-        self.beta = beta
-        if R is not None:
-            assert R.shape == (self.DIM, self.DIM)
-            self.R = R
-        else:
-            self.R = make_sparse_spd_matrix(self.DIM, alpha=0.5, random_state=7)
-        self.dists = self.build_distributions(alpha, beta)
 
-    @staticmethod
-    def build_distributions(alpha, beta):
-        dists = [
-            tfd.Normal(loc=alpha, scale=1),
-            tfd.Normal(loc=beta, scale=3),
+def multi_dim_toy_model(alpha, beta):
+    
+    z_distribution = tfd.Blockwise([
+            tfd.Normal(loc=alpha, scale=1),  # z1
+            tfd.Normal(loc=beta, scale=3),  # z2
             tfd.MixtureSameFamily(
                 mixture_distribution=tfd.Categorical(probs=[0.5, 0.5]),
                 components_distribution=tfd.Normal(
                     loc=[-2, 2],
                     scale=[1, 0.5]
                 )
-            ),
-            tfd.Exponential(3),
-            tfd.Exponential(0.5)
-        ]
-        return dists
+            ),  # z3
+            tfd.Exponential(3),  # z4
+            tfd.Exponential(0.5),  # z5
+        ])
+    
+    # compose linear transform
+    R = make_sparse_spd_matrix(5, alpha=0.5, random_state=7).astype(np.float32)
+    transform = tf.linalg.LinearOperatorFullMatrix(R)
+    bijector = tfp.bijectors.AffineLinearOperator(scale=transform)
+    
+    return tfd.TransformedDistribution(distribution=z_distribution, bijector=bijector)
 
-    def sample(self, n):
-        raw_samples = np.stack([dist.sample(n) for dist in self.dists], axis=1)
-        samples = np.einsum('ij, kj -> ki', self.R, raw_samples)
-        assert np.allclose(samples[0, :], np.matmul(self.R, raw_samples[0, :]))
-        return samples
+
+# In[7]:
 
 
 # Plot histograms / correlations of true distributions
 true_alpha = 1
 true_beta = -1
-true_dist = MultiDimDist(alpha=1, beta=-1)
+true_dist = multi_dim_toy_model(alpha=1, beta=-1)
 X_true = true_dist.sample(500)
-fig = corner.corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
+fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
+
+
+# In[8]:
+
 
 # create dataset
 
-
-pass

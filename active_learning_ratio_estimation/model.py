@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from carl.learning.calibration import CalibratedClassifierCV
+from sklearn.calibration import CalibratedClassifierCV
 from tensorflow_core.python.keras import Sequential
 from tensorflow_core.python.keras.wrappers.scikit_learn import KerasClassifier
 
@@ -96,9 +96,6 @@ class RatioModel:
                  loss='bce',
                  metrics=None,
                  calibration_method=None,
-                 bins='auto',
-                 interpolation=None,
-                 variable_width=False,
                  cv=1,
                  fit_kwargs=None
                  ):
@@ -123,9 +120,6 @@ class RatioModel:
         if calibration_method is not None:
             self.estimator = CalibratedClassifierCV(base_estimator=self.estimator,
                                                     method=self.calibration_method,
-                                                    bins=bins,
-                                                    interpolation=interpolation,
-                                                    variable_width=variable_width,
                                                     cv=cv)
 
     @property
