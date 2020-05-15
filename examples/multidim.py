@@ -7,6 +7,8 @@
 import sys
 from functools import partial
 
+from scipy.stats import chi2
+
 sys.path.insert(0, '..')
 
 import numpy as np
@@ -32,12 +34,25 @@ tf.random.set_seed(0)
 
 #%%
 
+class MultiDimToyModel(tfd.TransformedDistribution):
 
-def multi_dim_toy_model(alpha, beta):
-    
-    z_distribution = tfd.Blockwise([
-            tfd.Normal(loc=alpha, scale=1),  # z1
-            tfd.Normal(loc=beta, scale=3),  # z2
+    def __init__(self, alpha, beta):
+        self.alpha = alpha
+        self.beta = beta
+
+        # compose linear transform
+        R = make_sparse_spd_matrix(5, alpha=0.5, random_state=7).astype(np.float32)
+        self.R = R
+        transform = tf.linalg.LinearOperatorFullMatrix(R)
+        bijector = tfp.bijectors.AffineLinearOperator(scale=transform)
+
+        super().__init__(distribution=self.z_distribution, bijector=bijector)
+
+    @property
+    def z_distribution(self):
+        z_distribution = tfd.Blockwise([
+            tfd.Normal(loc=self.alpha, scale=1),  # z1
+            tfd.Normal(loc=self.beta, scale=3),  # z2
             tfd.MixtureSameFamily(
                 mixture_distribution=tfd.Categorical(probs=[0.5, 0.5]),
                 components_distribution=tfd.Normal(
@@ -48,17 +63,7 @@ def multi_dim_toy_model(alpha, beta):
             tfd.Exponential(3),  # z4
             tfd.Exponential(0.5),  # z5
         ])
-    
-    # compose linear transform
-    R = make_sparse_spd_matrix(5, alpha=0.5, random_state=7).astype(np.float32)
-    transform = tf.linalg.LinearOperatorFullMatrix(R)
-    bijector = tfp.bijectors.AffineLinearOperator(scale=transform)
-    
-    dist = tfd.TransformedDistribution(distribution=z_distribution, bijector=bijector)
-    dist.alpha = alpha
-    dist.beta = beta
-    dist.R = R
-    return dist
+        return z_distribution
 
 
 # In[7]:
@@ -67,9 +72,9 @@ def multi_dim_toy_model(alpha, beta):
 # Plot histograms / correlations of true distributions
 true_alpha = 1
 true_beta = -1
-true_dist = multi_dim_toy_model(alpha=1, beta=-1)
-X_true = true_dist.sample(500)
-fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
+p_true = MultiDimToyModel(alpha=1, beta=-1)
+X_true = p_true.sample(500)
+# fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
 # plt.show()
 
 
@@ -77,17 +82,51 @@ fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"]
 
 
 # find exact maximum likelihood
-approx_alpha = tf.Variable(tf.constant(0, dtype=tf.float32))
-approx_beta = tf.Variable(tf.constant(0, dtype=tf.float32))
-approx_dist = multi_dim_toy_model(alpha=approx_alpha, beta=approx_beta)
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
-n_iter = 5
+# var_alpha = tf.Variable(tf.constant(0, dtype=tf.float32))
+# var_beta = tf.Variable(tf.constant(0, dtype=tf.float32))
+# p_var = MultiDimToyModel(var_alpha, var_beta)
+# optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+# n_iter = int(1e3)
+#
+# for i in range(n_iter):
+#     loss_fn = lambda: -tf.keras.backend.sum(p_var.log_prob(X_true))
+#     optimizer.minimize(loss_fn, [var_alpha, var_beta])
+#
+# print(f'Exact MLE: alpha={var_alpha.numpy()}, beta={var_beta.numpy()}')
 
-for i in range(n_iter):
-    for X_i in X_true:
-        loss_fn = lambda: -approx_dist.log_prob(X_i)
-        optimizer.minimize(loss_fn, [approx_alpha, approx_beta])
 
-print(f'Exact MLE: alpha={approx_dist.alpha}, beta={approx_dist.beta}')
+# %%
 
+
+# Plot contours of exact negative log likelihood ratio
+p_1 = MultiDimToyModel(alpha=0, beta=0)  # define reference distribution p_1 to be defined at alpha=beta=0
+
+
+@tf.function
+def nllr_exact(alpha, beta, X):
+    p_theta = MultiDimToyModel(alpha=alpha, beta=beta)
+    return -tf.keras.backend.sum((p_theta.log_prob(X) - p_1.log_prob(X)))
+
+
+n_grid = 100
+alpha_bounds = (0.85, 1.15)
+beta_bounds = (-1.5, 1.5)
+alphas = np.linspace(alpha_bounds[0], alpha_bounds[1], n_grid).astype(np.float32)
+betas = np.linspace(beta_bounds[0], beta_bounds[1], n_grid).astype(np.float32)
+Alphas, Betas = np.meshgrid(alphas, betas)
+
+exact_contours = np.zeros_like(Alphas)
+for i in range(n_grid):
+    for j in range(n_grid):
+        alpha = tf.constant(Alphas[i, j])
+        beta = tf.constant(Betas[i, j])
+        exact_contours[i, j] = nllr_exact(alpha, beta, X_true)
+
+
+plt.figure()
+plt.contour(Alphas, Betas, exact_contours,
+            levels=[chi2.ppf(0.683, df=2),
+                    chi2.ppf(0.9545, df=2),
+                    chi2.ppf(0.9973, df=2)], colors=["w"])
+plt.contourf(Alphas, Betas, exact_contours, 50, vmin=0, vmax=30)
 pass
