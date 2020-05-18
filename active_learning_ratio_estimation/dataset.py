@@ -9,9 +9,10 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 
-class DataSet:
+class Dataset:
 
-    def __init__(self, samples: List[Dict[str, np.array]]):
+    def __init__(self, samples: List[Dict[str, np.array]] = None):
+        samples = samples or []
         self.samples = samples
 
     def __iter__(self):
@@ -50,6 +51,16 @@ class DataSet:
     def dataframe(self):
         return pd.DataFrame(self.samples)
 
+    @classmethod
+    def from_arrays(cls, x, theta_0, theta_1, y=None):
+        samples = []
+        for i in range(len(x)):
+            sample = dict(x=x[i], theta_0=theta_0[i], theta_1=theta_1[i])
+            if y is not None:
+                sample['y'] = y[i]
+            samples.append(sample)
+        return cls(samples)
+
     def to_csv(self, path_or_buf):
         self.dataframe.to_csv(path_or_buf, index=False)
 
@@ -62,10 +73,10 @@ class DataSet:
     @classmethod
     def from_dataframe(cls, df):
         samples = [x[1].to_dict() for x in df.iterrows()]
-        return DataSet(samples)
+        return Dataset(samples)
 
 
-class RatioDataset(DataSet):
+class RatioDataset(Dataset):
 
     def __init__(self,
                  n_samples_per_theta: int,
@@ -88,7 +99,7 @@ class RatioDataset(DataSet):
         super().__init__(samples)
 
     @staticmethod
-    def _choose_theta(dist, n_samples) -> np.array:
+    def _choose_theta(dist: Union[np.array, tfd.Distribution], n_samples) -> np.array:
         if hasattr(dist, 'sample'):
             theta = dist.sample(n_samples).numpy()
         elif isinstance(dist, Number):

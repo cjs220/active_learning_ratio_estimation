@@ -6,7 +6,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from tensorflow_core.python.keras import Sequential
 from tensorflow_core.python.keras.wrappers.scikit_learn import KerasClassifier
 
-from active_learning_ratio_estimation.dataset import RatioDataset
+from active_learning_ratio_estimation.dataset import RatioDataset, Dataset
 
 tfd = tfp.distributions
 
@@ -18,13 +18,12 @@ def build_input_unparameterised(x, theta_0, theta_1):
 
 
 def build_input_single_parameterised(x, theta_0, theta_1):
-    # TODO
-    return 0
+    assert len(np.unique(theta_0) == theta_0.shape[1])
+    return np.concatenate([x, theta_1], axis=1)
 
 
 def build_input_double_parameterised(x, theta_0, theta_1):
-    # TODO
-    return 0
+    return np.concatenate([x, theta_0, theta_1], axis=1)
 
 
 def sequential_build_fn(dense_layer,
@@ -155,7 +154,7 @@ class RatioModel:
         return self.predict_proba(dataset.x, dataset.theta_0, dataset.theta_1)
 
     def predict_likelihood_ratio_dataset(self, dataset):
-        return self.predict_likelihood_ratio(dataset.x, dataset.theta, dataset.theta_1)
+        return self.predict_likelihood_ratio(dataset.x, dataset.theta_0, dataset.theta_1)
 
 
 class RegularRatioModel(RatioModel):
@@ -177,3 +176,24 @@ class BayesianRatioModel(RatioModel):
         stack_preds = np.stack(np.split(preds, n_samples))
         y_pred = stack_preds.mean(axis=0)
         return y_pred
+
+
+def param_scan_single(model: RatioModel,
+                      X: np.array,
+                      theta_1s: np.array,
+                      theta_0: np.array):
+    assert model.parameterisation == 1
+    assert len(theta_0.shape) == 1
+    ds = Dataset()
+
+    def _tile_reshape(theta):
+        return np.tile(theta, len(X)).reshape(len(X), len(theta))
+
+    _theta_0 = _tile_reshape(theta_0)
+
+    for theta_1 in map(_tile_reshape, theta_1s):
+        ds = ds + Dataset.from_arrays(x=X, theta_0=_theta_0, theta_1=theta_1)
+
+    lr_pred = model.predict_likelihood_ratio_dataset(ds)
+    collected = np.stack(np.split(lr_pred, len(theta_1s)))
+    return -2 * np.log(collected).sum(axis=1)
