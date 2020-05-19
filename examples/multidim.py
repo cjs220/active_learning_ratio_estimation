@@ -5,9 +5,10 @@
 
 
 import sys
-from itertools import product
 
 from scipy.stats import chi2
+
+from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, build_feedforward
 
 sys.path.insert(0, '..')
 
@@ -20,8 +21,7 @@ tfd = tfp.distributions
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.datasets import make_sparse_spd_matrix
 
-from active_learning_ratio_estimation.dataset import RatioDataset
-from active_learning_ratio_estimation.model.ratio_model import RegularRatioModel, BayesianRatioModel, param_scan_single
+from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
 
@@ -95,6 +95,7 @@ max_log_prob = p_var.log_prob(X_true)
 
 print(f'Exact MLE: alpha={alpha_mle}, beta={beta_mle}')
 
+
 # %%
 
 
@@ -106,125 +107,71 @@ def nllr_exact(alpha, beta, X):
     return -tf.keras.backend.sum((p_theta.log_prob(X) - max_log_prob))
 
 
-n_plot = 100
+num = 10
 alpha_bounds = (0.75, 1.25)
 beta_bounds = (-2, 0)
-alphas = np.linspace(alpha_bounds[0], alpha_bounds[1], n_plot).astype(np.float32)
-betas = np.linspace(beta_bounds[0], beta_bounds[1], n_plot).astype(np.float32)
-Alphas, Betas = np.meshgrid(alphas, betas)
+param_grid = ParamGrid(bounds=[alpha_bounds, beta_bounds], num=num)
+Alphas, Betas = param_grid.meshgrid()
 
 exact_contours = np.zeros_like(Alphas)
-for i in range(n_plot):
-    for j in range(n_plot):
+for i in range(num):
+    for j in range(num):
         alpha = tf.constant(Alphas[i, j])
         beta = tf.constant(Betas[i, j])
         nllr = nllr_exact(alpha, beta, X_true)
-        exact_contours[i, j] = 2*nllr
-
-
-# %%
-
-
-
-
+        exact_contours[i, j] = nllr
 
 # %%
+
 
 # create dataset for fitting
-n_grid = 10
-theta_1 = np.array([[alpha, beta] for alpha, beta in
-                    product(np.linspace(*beta_bounds, num=n_grid),
-                            np.linspace(*alpha_bounds, num=n_grid))]).astype(np.float32)
-theta_0 = np.array([(alpha_mle, beta_mle) for _ in range(len(theta_1))]).astype(np.float32)
-
-ds = RatioDataset(n_samples_per_theta=1000,
-                  simulator_func=MultiDimToyModel,
-                  theta_0_dist=theta_0,
-                  theta_1_dist=theta_1)
-
+theta_0 = np.array([alpha_mle, beta_mle])
+ds = SinglyParameterizedRatioDataset(
+    simulator_func=MultiDimToyModel,
+    theta_0=theta_0,
+    theta_1_iterator=param_grid,
+    n_samples_per_theta=int(1e3)
+)
 
 # %%
 
-# fit model
 
 # hyperparams
 epochs = 2
 patience = 2
 validation_split = 0.1
 n_hidden = (40, 40)
-n_samples = int((1-validation_split) * len(ds))
+n_samples = int((1 - validation_split) * len(ds))
 
 fit_kwargs = dict(
     epochs=epochs,
     validation_split=validation_split,
-    callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience, min_delta=5e-4)],
+    verbose=2,
+    callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience)],
 )
 
 # regular, uncalibrated model
-regular_uncalibrated = RegularRatioModel(parameterisation=1, n_samples=n_samples,
-                                         n_hidden=n_hidden, activation='tanh',
-                                         fit_kwargs=fit_kwargs, calibration_method=None)
-
-# bayesian, uncalibrated model
-bayesian_uncalibrated = BayesianRatioModel(parameterisation=1, n_samples=n_samples,
-                                           n_hidden=n_hidden, activation='relu',
-                                           fit_kwargs=fit_kwargs, calibration_method=None)
-
-
-# regular, calibrated model
-cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-regular_calibrated = RegularRatioModel(parameterisation=1, n_samples=n_samples,
-                                       n_hidden=n_hidden, activation='tanh',
-                                       fit_kwargs=fit_kwargs, calibration_method='sigmoid',
-                                       cv=cv)
-
-
-lr_preds = dict()
+regular_uncalibrated = SinglyParameterizedRatioModel(
+    build_fn=build_feedforward,
+    build_fn_kwargs=dict(n_hidden=n_hidden, activation='tanh'),
+    fit_kwargs=fit_kwargs,
+    calibration_method=None
+)
 
 
 def fit_predict(clf):
-    clf.fit_dataset(ds)
-    lr_pred = param_scan_single(model=clf, X=X_true, theta_1s=theta_1, theta_0=np.array([alpha_mle, beta_mle]))
-    return lr_pred
+    clf.fit(ds)
+    nllr_pred = clf.nllr_param_scan(x=X_true, )
+    return nllr_pred
+
 
 models = {
     'Regular Uncalibrated': regular_uncalibrated,
     # 'Bayesian Uncalibrated': bayesian_uncalibrated,
     # 'Regular Calibrated': regular_calibrated
 }
+lr_preds = dict()
 
 for model_name, clf in models.items():
     print(f'\n******* Fitting {model_name} *******\n')
     lr_preds[model_name] = fit_predict(clf)
-
-
-
-
-# %%
-# plot contours
-plt.figure()
-plt.contour(Alphas, Betas, exact_contours,
-            levels=[chi2.ppf(0.683, df=2),
-                    chi2.ppf(0.9545, df=2),
-                    chi2.ppf(0.9973, df=2)], colors=["w"])
-plt.contourf(Alphas, Betas, exact_contours, 50, vmin=0, vmax=30)
-plt.plot([true_alpha], [true_beta],'ro', markersize=8, label='True')
-plt.plot([alpha_mle], [beta_mle], 'go', markersize=8, label='MLE')
-plt.xlabel(r"$\alpha$")
-plt.ylabel(r"$\beta$")
-plt.title(r'$-2\log \left[ L(\theta) / L(\theta _\mathrm{MLE}) \right]$')
-plt.xlim(alpha_bounds)
-plt.ylim(beta_bounds)
-
-# TODO
-preds = list(lr_preds.values())[0]
-pred_Alphas, pred_Betas = np.meshgrid(np.linspace(*alpha_bounds, num=n_grid),
-                                      np.linspace(*beta_bounds, num=n_grid))
-plt.contour(pred_Alphas, pred_Betas, preds.reshape(10, 10),
-            levels=[chi2.ppf(0.683, df=2),
-                    chi2.ppf(0.9545, df=2),
-                    chi2.ppf(0.9973, df=2)], colors=["k"])
-
-# cb = plt.colorbar()
-# plt.legend(loc='upper center', fancybox=True, shadow=True)
-# plt.show()

@@ -1,2 +1,2 @@
-from .ratio_model import UnparameterizedRatioModel, SinglyParameterizedRatioModel, DoublyParameterizedRatioModel
+from .ratio_model import UnparameterizedRatioModel, SinglyParameterizedRatioModel
 from .keras_models import build_bayesian_flipout, build_feedforward

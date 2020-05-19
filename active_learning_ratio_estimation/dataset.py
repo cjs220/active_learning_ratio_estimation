@@ -1,10 +1,8 @@
 import itertools
 from numbers import Number
-from typing import List, Dict, Callable, Union, Tuple, Sequence
-from random import shuffle
+from typing import List, Callable, Union, Sequence
 
 import numpy as np
-import pandas as pd
 import tensorflow_probability as tfp
 
 tfd = tfp.distributions
@@ -20,10 +18,22 @@ def _ensure_array(item: Union[Number, np.array]):
     return item if is_arr else np.array([item])
 
 
+def build_unparameterized_input(x):
+    return _ensure_2d(x)
+
+
+def build_singly_parameterized_input(x, theta_1s):
+    return np.concatenate([_ensure_2d(x), _ensure_2d(theta_1s)], axis=1)
+
+
+def stack_repeat(arr, reps, axis=0):
+    return np.stack(itertools.repeat(arr, reps), axis=axis)
+
+
 class ParamIterator:
 
     def __init__(self, values: List[np.ndarray]):
-        self.values = values
+        self.values = [val.astype(np.float32) for val in values]
 
     def __iter__(self):
         return iter(self.values)
@@ -36,6 +46,7 @@ class ParamIterator:
 
 
 class SingleParamIterator(ParamIterator):
+    # TODO: maybe delete
 
     def __init__(self, theta: Union[Number, np.array], n_samples: int):
         if isinstance(theta, Number):
@@ -49,8 +60,9 @@ class ParamGrid(ParamIterator):
 
     def __init__(self, bounds: Sequence[Sequence[float]], num: Union[int, Sequence[int]]):
         if not isinstance(num, Sequence):
-            num = [num for _ in range(len(bounds))]
-        self.linspaces = [np.linspace(*bounds_i, num=num[i]) for i, bounds_i in enumerate(bounds)]
+            num = [num]*len(bounds)
+        self.linspaces = [np.linspace(*bounds_i, num=num[i]).astype(np.float32)
+                          for i, bounds_i in enumerate(bounds)]
         values = itertools.product(*self.linspaces)
         values = map(np.array, values)
         values = list(values)
@@ -68,7 +80,6 @@ class DistributionParamIterator(ParamIterator):
 
 
 class RatioDataset:
-    parameterization = None
 
     def __init__(self,
                  x: np.array,
@@ -105,7 +116,6 @@ class RatioDataset:
 
 
 class UnparameterizedRatioDataset(RatioDataset):
-    parameterization = 0
 
     def __init__(self,
                  simulator_func: Callable,
@@ -125,21 +135,22 @@ class UnparameterizedRatioDataset(RatioDataset):
         y1 = np.ones_like(y0)
         x = np.concatenate([x0, x1], axis=0)
         y = np.concatenate([y0, y1], axis=0)
-        theta_0s = np.stack(itertools.repeat(theta_0, len(x)))
-        theta_1s = np.stack(itertools.repeat(theta_1, len(x)))
+        theta_0s = stack_repeat(theta_0, len(x))
+        theta_1s = stack_repeat(theta_1, len(x))
         super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s)
 
     def build_input(self):
-        return self.x
+        return build_unparameterized_input(self.x)
 
 
 class SinglyParameterizedRatioDataset(RatioDataset):
-    parameterization = 1
 
-    def __init__(self, simulator_func: Callable,
+    def __init__(self,
+                 simulator_func: Callable,
                  theta_0: Union[Number, np.ndarray],
                  theta_1_iterator: ParamIterator,
                  n_samples_per_theta: int):
+
         theta_0 = _ensure_array(theta_0)
         assert len(theta_0.shape) == 1
         self.theta_0 = theta_0
@@ -150,6 +161,7 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         y0 = np.zeros(len(x0))
         x1 = np.zeros_like(x0)
         theta_1s = np.zeros((len(x1), len(theta_0)))
+
         for i, theta_1 in enumerate(theta_1_iterator):
             sim1 = _build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
@@ -157,15 +169,16 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             x_i = sim1.sample(n_samples_per_theta).numpy()
             x1[start:stop, :] = _ensure_2d(x_i)
             theta_1s[start:stop, :] = theta_1
+
         y1 = np.ones_like(y0)
         x = np.concatenate([x0, x1], axis=0)
         y = np.concatenate([y0, y1], axis=0)
-        theta_0s = np.stack(itertools.repeat(theta_0, len(x)))
+        theta_0s = stack_repeat(theta_0, len(x))
         theta_1s = np.repeat(theta_1s, 2, axis=0)
         super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s)
 
     def build_input(self):
-        return np.concatenate([self.x, self.theta_1s], axis=1)
+        return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
 
 
 def _build_simulator(simulator_func, theta):

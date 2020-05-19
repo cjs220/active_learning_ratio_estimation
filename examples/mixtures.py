@@ -68,7 +68,7 @@ ds = UnparameterizedRatioDataset(
 
 
 # hyperparams
-epochs = 2
+epochs = 10
 patience = 2
 validation_split = 0.1
 n_hidden = (10, 10)
@@ -77,6 +77,7 @@ n_samples = int((1 - validation_split) * len(ds))
 fit_kwargs = dict(
     epochs=epochs,
     validation_split=validation_split,
+    verbose=2,
     callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience, min_delta=5e-4)],
 )
 
@@ -94,7 +95,7 @@ regular_uncalibrated = UnparameterizedRatioModel(
 # bayesian, uncalibrated model
 bayesian_uncalibrated = UnparameterizedRatioModel(
     build_fn=build_bayesian_flipout,
-    build_fn_kwargs=dict(n_hidden=n_hidden, activation='tanh', n_samples=n_samples),
+    build_fn_kwargs=dict(n_hidden=n_hidden, activation='relu', n_samples=n_samples),
     fit_kwargs=fit_kwargs,
     calibration_method=None
 )
@@ -110,9 +111,9 @@ regular_calibrated = UnparameterizedRatioModel(
 )
 
 models = {
-    'Regular Uncalibrated': regular_uncalibrated,
+    # 'Regular Uncalibrated': regular_uncalibrated,
     'Bayesian Uncalibrated': bayesian_uncalibrated,
-    'Regular Calibrated': regular_calibrated
+    # 'Regular Calibrated': regular_calibrated
 }
 
 
@@ -123,7 +124,7 @@ x = np.linspace(-5, 5, int(1e4))
 
 
 def fit_and_predict(clf):
-    clf.fit_dataset(ds)
+    clf.fit(ds)
     y_pred = clf.predict_proba(x, theta_0, theta_1)[:, 1].squeeze()
     lr_estimate = clf.predict_likelihood_ratio(x, theta_0, theta_1).squeeze()
     nllr = -np.log(lr_estimate)
@@ -154,8 +155,8 @@ y_preds = pd.DataFrame(y_preds, index=x)
 nllrs = pd.DataFrame(nllrs, index=x)
 
 # Take a rolling mean of the Bayesian predictions to reduce MC noise
-y_preds['Bayesian Uncalibrated'] = y_preds['Bayesian Uncalibrated'].rolling(5, center=True).mean()
-nllrs['Bayesian Uncalibrated'] = nllrs['Bayesian Uncalibrated'].rolling(5, center=True).mean()
+y_preds['Bayesian Uncalibrated (Rolling)'] = y_preds['Bayesian Uncalibrated'].rolling(5, center=True).mean()
+nllrs['Bayesian Uncalibrated (Rolling)'] = nllrs['Bayesian Uncalibrated'].rolling(5, center=True).mean()
 
 
 # In[9]:

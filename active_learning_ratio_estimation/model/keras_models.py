@@ -29,7 +29,7 @@ class BaseBayesianFeedForward(BaseFeedForward):
         raise NotImplementedError
 
     def predict_proba(self, x, **kwargs):
-        x_tile = np.tile(x, self.prediction_mc_samples)
+        x_tile = np.repeat(x.squeeze(), self.prediction_mc_samples, axis=0)
         preds = super(BaseBayesianFeedForward, self).predict_proba(x_tile, **kwargs)
         stack_preds = np.stack(np.split(preds, self.prediction_mc_samples))
         y_pred = stack_preds.mean(axis=0)
