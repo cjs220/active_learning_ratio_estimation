@@ -101,9 +101,11 @@ class RatioDataset(Dataset):
     @staticmethod
     def _choose_theta(dist: Union[np.array, tfd.Distribution], n_samples) -> np.array:
         if hasattr(dist, 'sample'):
+            n_samples = n_samples or 1
             theta = dist.sample(n_samples).numpy()
         elif isinstance(dist, Number):
             # TODO: remove this
+            n_samples = n_samples or 1
             theta = np.array([dist] * n_samples)
         else:
             # theta is an array of shape (num_thetas, -1)
@@ -114,6 +116,9 @@ class RatioDataset(Dataset):
 
     @staticmethod
     def simulate(simulator_func, theta, n_samples_per_theta):
-        simulator = simulator_func(*theta)
+        try:
+            simulator = simulator_func(*theta)
+        except TypeError:
+            simulator = simulator_func(theta)
         x = simulator.sample(n_samples_per_theta).numpy()
         return x

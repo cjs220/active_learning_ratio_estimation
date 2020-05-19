@@ -5,7 +5,6 @@
 
 
 import sys
-from functools import partial
 from itertools import product
 
 from scipy.stats import chi2
@@ -14,18 +13,15 @@ sys.path.insert(0, '..')
 
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import tensorflow as tf
 import tensorflow_probability as tfp
 
 tfd = tfp.distributions
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.datasets import make_sparse_spd_matrix
-from corner import corner
 
 from active_learning_ratio_estimation.dataset import RatioDataset
-from active_learning_ratio_estimation.util import ideal_classifier_probs, negative_log_likelihood_ratio
-from active_learning_ratio_estimation.model import RegularRatioModel, BayesianRatioModel, param_scan_single
+from active_learning_ratio_estimation.model.ratio_model import RegularRatioModel, BayesianRatioModel, param_scan_single
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
 
