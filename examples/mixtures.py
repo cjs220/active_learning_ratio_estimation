@@ -17,7 +17,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from active_learning_ratio_estimation.dataset import RatioDataset
+from active_learning_ratio_estimation.dataset import UnparameterizedRatioDataset
 from active_learning_ratio_estimation.util import ideal_classifier_probs, negative_log_likelihood_ratio
 from active_learning_ratio_estimation.model import UnparameterizedRatioModel, build_feedforward, build_bayesian_flipout
 
@@ -56,20 +56,19 @@ theta_0 = 0.05
 theta_1 = 0.00
 n_samples_per_theta = int(2e5)
 
-ds = RatioDataset(
+ds = UnparameterizedRatioDataset(
     n_samples_per_theta=n_samples_per_theta,
     simulator_func=triple_mixture,
-    theta_0_dist=theta_0,
-    theta_1_dist=theta_1
+    theta_0=theta_0,
+    theta_1=theta_1
 )
 
-ds.dataframe.head()
 
 # In[4]:
 
 
 # hyperparams
-epochs = 20
+epochs = 2
 patience = 2
 validation_split = 0.1
 n_hidden = (10, 10)

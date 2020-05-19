@@ -28,15 +28,10 @@ class BaseBayesianFeedForward(BaseFeedForward):
     def dense_layer(self, units, activation):
         raise NotImplementedError
 
-    def predict(self, x, theta_0, theta_1, n_samples=None):
-        proba_preds = self.predict_proba(x, theta_0, theta_1, n_samples=n_samples)[:, 1]
-        return np.around(proba_preds)
-
-    def predict_proba(self, x, theta_0, theta_1, n_samples=None):
-        n_samples = n_samples or self.prediction_mc_samples
-        x_tile = np.tile(x, n_samples)
-        preds = super(self.__class__, self).predict_proba(x_tile, theta_0, theta_1)
-        stack_preds = np.stack(np.split(preds, n_samples))
+    def predict_proba(self, x, **kwargs):
+        x_tile = np.tile(x, self.prediction_mc_samples)
+        preds = super(BaseBayesianFeedForward, self).predict_proba(x_tile, **kwargs)
+        stack_preds = np.stack(np.split(preds, self.prediction_mc_samples))
         y_pred = stack_preds.mean(axis=0)
         return y_pred
 

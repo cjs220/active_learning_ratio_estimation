@@ -6,7 +6,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tensorflow_core.python.keras.wrappers.scikit_learn import KerasClassifier
 
-from active_learning_ratio_estimation.dataset import RatioDataset, Dataset
+from active_learning_ratio_estimation.dataset import RatioDataset
 
 tfd = tfp.distributions
 
@@ -41,7 +41,7 @@ class BaseRatioModel:
         return self
 
     def fit_dataset(self, dataset: RatioDataset):
-        self.fit(dataset.x, dataset.theta_0, dataset.theta_1, dataset.y)
+        self.fit(dataset.x, dataset.theta_0s, dataset.theta_1s, dataset.y)
         return self
 
     def predict(self, x, theta_0, theta_1):
@@ -58,13 +58,13 @@ class BaseRatioModel:
         return likelihood_ratio
 
     def predict_dataset(self, dataset):
-        return self.predict(dataset.x, dataset.theta_0, dataset.theta_1)
+        return self.predict(dataset.x, dataset.theta_0s, dataset.theta_1s)
 
     def predict_proba_dataset(self, dataset):
-        return self.predict_proba(dataset.x, dataset.theta_0, dataset.theta_1)
+        return self.predict_proba(dataset.x, dataset.theta_0s, dataset.theta_1s)
 
     def predict_likelihood_ratio_dataset(self, dataset):
-        return self.predict_likelihood_ratio(dataset.x, dataset.theta_0, dataset.theta_1)
+        return self.predict_likelihood_ratio(dataset.x, dataset.theta_0s, dataset.theta_1s)
 
 
 class UnparameterizedRatioModel(BaseRatioModel):
@@ -92,7 +92,6 @@ def param_scan_single(model: BaseRatioModel,
                       X: np.array,
                       theta_1s: np.array,
                       theta_0: np.array):
-    assert model.parameterisation == 1
     assert len(theta_0.shape) == 1
     ds = Dataset()
 
