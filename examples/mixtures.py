@@ -113,7 +113,7 @@ regular_calibrated = UnparameterizedRatioModel(
 models = {
     # 'Regular Uncalibrated': regular_uncalibrated,
     'Bayesian Uncalibrated': bayesian_uncalibrated,
-    # 'Regular Calibrated': regular_calibrated
+    'Regular Calibrated': regular_calibrated
 }
 
 

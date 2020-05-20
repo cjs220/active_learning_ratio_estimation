@@ -5,29 +5,17 @@ from typing import List, Callable, Union, Sequence
 import numpy as np
 import tensorflow_probability as tfp
 
+from active_learning_ratio_estimation.util import ensure_2d, ensure_array, stack_repeat, build_simulator
+
 tfd = tfp.distributions
 
 
-def _ensure_2d(arr: np.array) -> np.array:
-    is2d = len(arr.shape) == 2
-    return arr if is2d else arr.reshape(-1, 1)
-
-
-def _ensure_array(item: Union[Number, np.array]):
-    is_arr = isinstance(item, np.ndarray)
-    return item if is_arr else np.array([item])
-
-
 def build_unparameterized_input(x):
-    return _ensure_2d(x)
+    return ensure_2d(x)
 
 
 def build_singly_parameterized_input(x, theta_1s):
-    return np.concatenate([_ensure_2d(x), _ensure_2d(theta_1s)], axis=1)
-
-
-def stack_repeat(arr, reps, axis=0):
-    return np.stack(itertools.repeat(arr, reps), axis=axis)
+    return np.concatenate([ensure_2d(x), ensure_2d(theta_1s)], axis=1)
 
 
 class ParamIterator:
@@ -86,7 +74,7 @@ class RatioDataset:
                  theta_0s: np.array,
                  theta_1s: np.array,
                  y: np.array = None):
-        self.x = _ensure_2d(x)
+        self.x = ensure_2d(x)
         self.theta_0s = theta_0s
         self.theta_1s = theta_1s
         self.y = y
@@ -122,13 +110,13 @@ class UnparameterizedRatioDataset(RatioDataset):
                  theta_0: Union[Number, np.array],
                  theta_1: Union[Number, np.array],
                  n_samples_per_theta: int):
-        theta_0, theta_1 = map(_ensure_array, [theta_0, theta_1])
+        theta_0, theta_1 = map(ensure_array, [theta_0, theta_1])
         assert len(theta_0.shape) == 1 == len(theta_1.shape)
         self.theta_0 = theta_0
         self.theta_1 = theta_1
 
-        sim0 = _build_simulator(simulator_func, theta_0)
-        sim1 = _build_simulator(simulator_func, theta_1)
+        sim0 = build_simulator(simulator_func, theta_0)
+        sim1 = build_simulator(simulator_func, theta_1)
         x0 = sim0.sample(n_samples_per_theta).numpy()
         x1 = sim1.sample(n_samples_per_theta).numpy()
         y0 = np.zeros(len(x0))
@@ -151,23 +139,23 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                  theta_1_iterator: ParamIterator,
                  n_samples_per_theta: int):
 
-        theta_0 = _ensure_array(theta_0)
+        theta_0 = ensure_array(theta_0)
         assert len(theta_0.shape) == 1
         self.theta_0 = theta_0
 
-        sim0 = _build_simulator(simulator_func, theta_0)
+        sim0 = build_simulator(simulator_func, theta_0)
         x0 = sim0.sample(n_samples_per_theta*len(theta_1_iterator)).numpy()
-        x0 = _ensure_2d(x0)
+        x0 = ensure_2d(x0)
         y0 = np.zeros(len(x0))
         x1 = np.zeros_like(x0)
         theta_1s = np.zeros((len(x1), len(theta_0)))
 
         for i, theta_1 in enumerate(theta_1_iterator):
-            sim1 = _build_simulator(simulator_func, theta_1)
+            sim1 = build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
             stop = (i+1)*n_samples_per_theta
             x_i = sim1.sample(n_samples_per_theta).numpy()
-            x1[start:stop, :] = _ensure_2d(x_i)
+            x1[start:stop, :] = ensure_2d(x_i)
             theta_1s[start:stop, :] = theta_1
 
         y1 = np.ones_like(y0)
@@ -179,14 +167,6 @@ class SinglyParameterizedRatioDataset(RatioDataset):
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
-
-
-def _build_simulator(simulator_func, theta):
-    try:
-        simulator = simulator_func(*theta)
-    except TypeError:
-        simulator = simulator_func(theta)
-    return simulator
 
 
 if __name__ == '__main__':

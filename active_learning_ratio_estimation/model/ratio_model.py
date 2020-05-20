@@ -7,7 +7,9 @@ from sklearn.preprocessing import StandardScaler
 from tensorflow_core.python.keras.wrappers.scikit_learn import KerasClassifier
 
 from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
-    UnparameterizedRatioDataset, build_unparameterized_input, stack_repeat, build_singly_parameterized_input, ParamGrid
+    UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid
+from active_learning_ratio_estimation.util import tile_reshape, outer_prod_shape_to_meshgrid_shape, concat_repeat, \
+    stack_repeat
 
 tfd = tfp.distributions
 
@@ -50,6 +52,11 @@ class BaseRatioModel:
         likelihood_ratio = y_pred / (1 - y_pred)
         return likelihood_ratio
 
+    def predict_negative_log_likelihood_ratio(self, x, *args):
+        # y_pred = self.predict_proba(x, *args)[:, 1]
+        # return - (np.log(y_pred) - np.log(1 - y_pred))
+        return -np.log(self.predict_likelihood_ratio(x, *args))
+
 
 class UnparameterizedRatioModel(BaseRatioModel):
 
@@ -83,31 +90,21 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
         return self.estimator.predict(model_input)
 
     def predict_proba(self, x, theta_1):
-        assert len(theta_1) == len(x)
+        if not len(theta_1) == len(x):
+            assert theta_1.shape == self.theta_0_.shape
+            theta_1 = stack_repeat(theta_1, len(x))
         model_input = build_singly_parameterized_input(x=x, theta_1s=theta_1)
         return self.estimator.predict_proba(model_input)
 
-    def nllr_param_scan(self, x: np.ndarray, param_grid: ParamGrid):
+    def nllr_param_scan(self, x: np.ndarray, param_grid: ParamGrid, meshgrid_shape: bool = True):
         # calculate the negative likelihood ratio across parameter grid for given x
-        meshgrid = param_grid.meshgrid()
+        theta_1 = np.concatenate([tile_reshape(theta, reps=len(x)) for theta in param_grid.values], axis=0)
+        x_ = concat_repeat(x, len(param_grid), axis=0)
+        nllr_pred = self.predict_negative_log_likelihood_ratio(x_, theta_1)
+        nllr_pred_total = np.stack(np.split(nllr_pred, len(param_grid.values))).sum(axis=1)
+        if meshgrid_shape:
+            meshgrid = param_grid.meshgrid()
+            nllr_pred_total = outer_prod_shape_to_meshgrid_shape(nllr_pred_total, meshgrid[0])
+        return nllr_pred_total
 
 
-
-def param_scan_single(model: BaseRatioModel,
-                      X: np.array,
-                      theta_1s: np.array,
-                      theta_0: np.array):
-    assert len(theta_0.shape) == 1
-    ds = Dataset()
-
-    def _tile_reshape(theta):
-        return np.tile(theta, len(X)).reshape(len(X), len(theta))
-
-    _theta_0 = _tile_reshape(theta_0)
-
-    for theta_1 in map(_tile_reshape, theta_1s):
-        ds = ds + Dataset.from_arrays(x=X, theta_0=_theta_0, theta_1=theta_1)
-
-    lr_pred = model.predict_likelihood_ratio_dataset(ds)
-    collected = np.stack(np.split(lr_pred, len(theta_1s)))
-    return -2 * np.log(collected).sum(axis=1)
