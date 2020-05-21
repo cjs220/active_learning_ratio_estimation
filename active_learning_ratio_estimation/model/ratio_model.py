@@ -21,7 +21,7 @@ class BaseRatioModel:
                  build_fn_kwargs=None,
                  calibration_method=None,
                  cv=1,
-                 normalize_input=False):
+                 normalize_input=True):
 
         build_fn_kwargs['callbacks'] = fit_kwargs.pop('callbacks', None)
         clf = KerasClassifier(build_fn, **build_fn_kwargs, **fit_kwargs)
@@ -106,5 +106,4 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
             meshgrid = param_grid.meshgrid()
             nllr_pred_total = outer_prod_shape_to_meshgrid_shape(nllr_pred_total, meshgrid[0])
         return nllr_pred_total
-
 

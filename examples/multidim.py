@@ -133,14 +133,14 @@ ds = SinglyParameterizedRatioDataset(
     simulator_func=MultiDimToyModel,
     theta_0=theta_0,
     theta_1_iterator=param_grid,
-    n_samples_per_theta=int(1e3)
+    n_samples_per_theta=int(1e4)
 )
 
 # %%
 
 
 # hyperparams
-epochs = 2
+epochs = 5
 patience = 2
 validation_split = 0.1
 n_hidden = (40, 40)
@@ -150,23 +150,31 @@ fit_kwargs = dict(
     epochs=epochs,
     validation_split=validation_split,
     verbose=2,
-    # callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience)],
+    callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience),
+               tf.keras.callbacks.TensorBoard()],
+)
+
+# regular, uncalibrated model
+regular_uncalibrated = SinglyParameterizedRatioModel(
+    build_fn=build_feedforward,
+    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', dropout=0.1, loss='bce', metrics=['accuracy']),
+    fit_kwargs=fit_kwargs,
 )
 
 # regular, calibrated model
-# cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-# regular_calibrated = SinglyParameterizedRatioModel(
-#     build_fn=build_feedforward,
-#     build_fn_kwargs=dict(n_hidden=n_hidden, activation='tanh'),
-#     fit_kwargs=fit_kwargs,
-#     calibration_method='sigmoid',
-#     cv=cv,
-# )
+cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
+regular_calibrated = SinglyParameterizedRatioModel(
+    build_fn=build_feedforward,
+    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', dropout=0),
+    fit_kwargs=fit_kwargs,
+    calibration_method='sigmoid',
+    cv=cv,
+)
 
 # bayesian, uncalibrated model
 bayesian_uncalibrated = SinglyParameterizedRatioModel(
     build_fn=build_bayesian_flipout,
-    build_fn_kwargs=dict(n_hidden=n_hidden, activation='relu', n_samples=n_samples),
+    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', n_samples=n_samples),
     fit_kwargs=fit_kwargs,
     calibration_method=None,
 )
@@ -174,13 +182,6 @@ bayesian_uncalibrated = SinglyParameterizedRatioModel(
 
 def fit_predict(clf):
     clf.fit(ds)
-    theta_1 = np.array([0.5, 0.5]).astype(np.float32)
-    p_pred = clf.predict_proba(X_true, theta_1=theta_1)[:, 1]
-    p_ideal = ideal_classifier_probs(simulator_func=MultiDimToyModel,
-                                     x=X_true,
-                                     theta_0=theta_0,
-                                     theta_1=theta_1)
-    average_diff = np.abs(p_pred - p_ideal).mean()
     nllr_pred = clf.nllr_param_scan(x=X_true, param_grid=param_grid)
     return nllr_pred
 
@@ -213,8 +214,18 @@ def plot_contours(contours, ax):
 
 
 f, axarr = plt.subplots(2, sharex=True)
-for i, contours in enumerate([exact_contours, pred_contours['Regular Calibrated']]):
+for i, contours in enumerate([exact_contours, list(pred_contours.values())[0]]):
     plot_contours(contours, ax=axarr[i])
 
 axarr[0].legend(loc='upper center', fancybox=True, shadow=True)
+theta_1 = np.array([0.5, 0.5]).astype(np.float32)
+p_pred = clf.predict_proba(X_true, theta_1=theta_1)[:, 1]
+p_ideal = ideal_classifier_probs(simulator_func=MultiDimToyModel,
+                                 x=X_true,
+                                 theta_0=theta_0,
+                                 theta_1=theta_1)
+average_diff = np.abs(p_pred - p_ideal).mean()
+contour_mae = np.abs(contours - exact_contours).mean()
+print('Average diff: ', average_diff)
+print('Contour MAE: ', contour_mae)
 plt.show()

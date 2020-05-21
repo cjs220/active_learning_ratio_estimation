@@ -5,7 +5,7 @@ from typing import List, Callable, Union, Sequence
 import numpy as np
 import tensorflow_probability as tfp
 
-from active_learning_ratio_estimation.util import ensure_2d, ensure_array, stack_repeat, build_simulator
+from active_learning_ratio_estimation.util import ensure_2d, ensure_array, stack_repeat, build_simulator, concat_repeat
 
 tfd = tfp.distributions
 
@@ -73,7 +73,8 @@ class RatioDataset:
                  x: np.array,
                  theta_0s: np.array,
                  theta_1s: np.array,
-                 y: np.array = None):
+                 y: np.array = None,
+                 shuffle: bool = True):
         self.x = ensure_2d(x)
         self.theta_0s = theta_0s
         self.theta_1s = theta_1s
@@ -83,7 +84,8 @@ class RatioDataset:
             arrs.append(y)
         if len(set(map(len, arrs))) != 1:
             raise ValueError('Arrays have different lengths')
-        self.shuffle()
+        if shuffle:
+            self.shuffle()
 
     def shuffle(self):
         p = np.random.permutation(len(self.x))
@@ -109,7 +111,8 @@ class UnparameterizedRatioDataset(RatioDataset):
                  simulator_func: Callable,
                  theta_0: Union[Number, np.array],
                  theta_1: Union[Number, np.array],
-                 n_samples_per_theta: int):
+                 n_samples_per_theta: int,
+                 shuffle: bool = True):
         theta_0, theta_1 = map(ensure_array, [theta_0, theta_1])
         assert len(theta_0.shape) == 1 == len(theta_1.shape)
         self.theta_0 = theta_0
@@ -125,7 +128,7 @@ class UnparameterizedRatioDataset(RatioDataset):
         y = np.concatenate([y0, y1], axis=0)
         theta_0s = stack_repeat(theta_0, len(x))
         theta_1s = stack_repeat(theta_1, len(x))
-        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s)
+        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s, shuffle=shuffle)
 
     def build_input(self):
         return build_unparameterized_input(self.x)
@@ -137,7 +140,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                  simulator_func: Callable,
                  theta_0: Union[Number, np.ndarray],
                  theta_1_iterator: ParamIterator,
-                 n_samples_per_theta: int):
+                 n_samples_per_theta: int,
+                 shuffle: bool = True):
 
         theta_0 = ensure_array(theta_0)
         assert len(theta_0.shape) == 1
@@ -162,8 +166,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         x = np.concatenate([x0, x1], axis=0)
         y = np.concatenate([y0, y1], axis=0)
         theta_0s = stack_repeat(theta_0, len(x))
-        theta_1s = np.repeat(theta_1s, 2, axis=0)
-        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s)
+        theta_1s = concat_repeat(theta_1s, 2, axis=0)
+        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s, shuffle=shuffle)
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
