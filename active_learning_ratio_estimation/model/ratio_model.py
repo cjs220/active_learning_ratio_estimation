@@ -53,8 +53,6 @@ class BaseRatioModel:
         return likelihood_ratio
 
     def predict_negative_log_likelihood_ratio(self, x, *args):
-        # y_pred = self.predict_proba(x, *args)[:, 1]
-        # return - (np.log(y_pred) - np.log(1 - y_pred))
         return -np.log(self.predict_likelihood_ratio(x, *args))
 
 
@@ -106,4 +104,3 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
             meshgrid = param_grid.meshgrid()
             nllr_pred_total = outer_prod_shape_to_meshgrid_shape(nllr_pred_total, meshgrid[0])
         return nllr_pred_total
-

@@ -13,9 +13,13 @@ def _get_likelihoods(x, simulator_func, theta_0, theta_1):
     return l0, l1
 
 
-def ideal_classifier_probs(x, simulator_func, theta_0, theta_1):
+def ideal_classifier_probs_from_simulator(x, simulator_func, theta_0, theta_1):
     l0, l1 = _get_likelihoods(x=x, simulator_func=simulator_func, theta_0=theta_0, theta_1=theta_1)
-    return l1/(l0+l1)
+    return ideal_classifier_probs(l0, l1)
+
+
+def ideal_classifier_probs(l0, l1):
+    return l1/(l0 + l1)
 
 
 def likelihood_ratio(x, simulator_func, theta_0, theta_1):

@@ -10,7 +10,7 @@ from scipy.stats import chi2
 
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, build_feedforward,\
     build_bayesian_flipout
-from active_learning_ratio_estimation.util import negative_log_likelihood_ratio, ideal_classifier_probs
+from active_learning_ratio_estimation.util import negative_log_likelihood_ratio, ideal_classifier_probs_from_simulator
 
 sys.path.insert(0, '..')
 
@@ -220,10 +220,10 @@ for i, contours in enumerate([exact_contours, list(pred_contours.values())[0]]):
 axarr[0].legend(loc='upper center', fancybox=True, shadow=True)
 theta_1 = np.array([0.5, 0.5]).astype(np.float32)
 p_pred = clf.predict_proba(X_true, theta_1=theta_1)[:, 1]
-p_ideal = ideal_classifier_probs(simulator_func=MultiDimToyModel,
-                                 x=X_true,
-                                 theta_0=theta_0,
-                                 theta_1=theta_1)
+p_ideal = ideal_classifier_probs_from_simulator(simulator_func=MultiDimToyModel,
+                                                x=X_true,
+                                                theta_0=theta_0,
+                                                theta_1=theta_1)
 average_diff = np.abs(p_pred - p_ideal).mean()
 contour_mae = np.abs(contours - exact_contours).mean()
 print('Average diff: ', average_diff)

@@ -18,7 +18,7 @@ tfd = tfp.distributions
 from sklearn.model_selection import StratifiedShuffleSplit
 
 from active_learning_ratio_estimation.dataset import UnparameterizedRatioDataset
-from active_learning_ratio_estimation.util import ideal_classifier_probs, negative_log_likelihood_ratio
+from active_learning_ratio_estimation.util import ideal_classifier_probs_from_simulator, negative_log_likelihood_ratio
 from active_learning_ratio_estimation.model import UnparameterizedRatioModel, build_feedforward, build_bayesian_flipout
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
@@ -149,7 +149,7 @@ for model_name, model in models.items():
 
 
 # Add ideal predictions
-y_preds['Ideal'] = ideal_classifier_probs(x, triple_mixture, theta_0, theta_1)
+y_preds['Ideal'] = ideal_classifier_probs_from_simulator(x, triple_mixture, theta_0, theta_1)
 nllrs['True'] = negative_log_likelihood_ratio(x, triple_mixture, theta_0, theta_1)
 y_preds = pd.DataFrame(y_preds, index=x)
 nllrs = pd.DataFrame(nllrs, index=x)

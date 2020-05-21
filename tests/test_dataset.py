@@ -12,7 +12,12 @@ class DummySimulator:
         self.theta = theta
 
     def sample(self, n):
+        # returns theta n times
         return tf.constant(stack_repeat(self.theta, n))
+
+    def log_prob(self, x: np.array):
+        # returns 1 if x==theta, 0.5 else
+        return tf.constant(0.5*(x == self.theta)[:, 0] + 0.5)
 
 
 def test_singly_parameterized_dataset():
@@ -45,7 +50,8 @@ def test_singly_parameterized_dataset():
             [1.0, 1.0],
             [0.0, 0.0],
             [0.5, 0.5]
-        ])
+        ]),
+        'nllr': -(np.array([0.5, 0.5, 1, 1]) - np.array([1, 1, 0.5, 0.5]))
     }
 
     for arr_name, expected_arr in expected.items():

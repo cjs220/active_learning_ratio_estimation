@@ -74,16 +74,22 @@ class RatioDataset:
                  theta_0s: np.array,
                  theta_1s: np.array,
                  y: np.array = None,
+                 nllr: np.array = None,
                  shuffle: bool = True):
         self.x = ensure_2d(x)
         self.theta_0s = theta_0s
         self.theta_1s = theta_1s
         self.y = y
+        self.nllr = nllr
+
+        # check arrays have same length
         arrs = [self.x, self.theta_0s, self.theta_1s]
-        if y is not None:
-            arrs.append(y)
+        for arr in (y, nllr):
+            if arr is not None:
+                arrs.append(arr)
         if len(set(map(len, arrs))) != 1:
             raise ValueError('Arrays have different lengths')
+
         if shuffle:
             self.shuffle()
 
@@ -92,11 +98,15 @@ class RatioDataset:
         self.x = self.x[p]
         self.theta_0s = self.theta_0s[p]
         self.theta_1s = self.theta_1s[p]
-        try:
-            self.y = self.y[p]
-        except TypeError:
-            # y is None
-            pass
+
+        # shuffle y and nllr if they have been given
+        for arr_name in ('y', 'nllr'):
+            try:
+                arr = getattr(self, arr_name)
+                setattr(self, arr_name, arr[p])
+            except TypeError:
+                # arr is None
+                pass
 
     def build_input(self):
         raise NotImplementedError
@@ -141,7 +151,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                  theta_0: Union[Number, np.ndarray],
                  theta_1_iterator: ParamIterator,
                  n_samples_per_theta: int,
-                 shuffle: bool = True):
+                 shuffle: bool = True,
+                 include_nllr: bool = True):
 
         theta_0 = ensure_array(theta_0)
         assert len(theta_0.shape) == 1
@@ -154,6 +165,10 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         x1 = np.zeros_like(x0)
         theta_1s = np.zeros((len(x1), len(theta_0)))
 
+        if include_nllr:
+            ll1_x0 = np.zeros_like(y0)
+            ll1_x1 = np.zeros_like(y0)
+
         for i, theta_1 in enumerate(theta_1_iterator):
             sim1 = build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
@@ -161,13 +176,24 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             x_i = sim1.sample(n_samples_per_theta).numpy()
             x1[start:stop, :] = ensure_2d(x_i)
             theta_1s[start:stop, :] = theta_1
+            if include_nllr:
+                ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
 
         y1 = np.ones_like(y0)
         x = np.concatenate([x0, x1], axis=0)
         y = np.concatenate([y0, y1], axis=0)
         theta_0s = stack_repeat(theta_0, len(x))
         theta_1s = concat_repeat(theta_1s, 2, axis=0)
-        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s, shuffle=shuffle)
+
+        if include_nllr:
+            ll0 = sim0.log_prob(x).numpy().squeeze()
+            ll1 = np.concatenate([ll1_x0, ll1_x1], axis=0)
+            nllr = -(ll1 - ll0)
+        else:
+            nllr = None
+
+        super().__init__(x=x, y=y, theta_0s=theta_0s, theta_1s=theta_1s, nllr=nllr, shuffle=shuffle)
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
