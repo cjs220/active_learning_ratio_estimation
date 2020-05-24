@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 import tensorflow as tf
 
+from active_learning_ratio_estimation.model.keras_models import FeedForward, FlipoutFeedForward
+
 
 class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
 
@@ -33,6 +35,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         raise NotImplementedError
 
     def fit(self, X, y):
+        self.n_samples_ = int((1-self.validation_split)*len(X))
         model = self.get_keras_model()
         metrics = ['accuracy']
         model.compile(loss=self.loss, optimizer=self.optimizer, run_eagerly=self.run_eagerly, metrics=metrics)
@@ -42,26 +45,36 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         return self
 
     def predict_proba(self, X):
+        probs = self.model_.predict(X)
+        probs = np.hstack([1 - probs, probs])
+        return probs
+
+    def score(self, X, y, sample_weight=None):
         # TODO
-        raise AttributeError
+        pass
 
 
 class BaseBayesianClassifier(BaseWrapper, ABC):
 
-    def sample_predict(self, X, samples=100):
+    def sample_predictive_distribution(self, X, samples=100):
         X_tile = np.repeat(X, samples, axis=0)
+        probs = super().predict_proba(X_tile)
+        probs = np.stack(np.split(probs, len(X)))
+        return probs
 
     def predict_proba(self, X, samples=100, return_std=False):
-        x_tile = np.repeat(x, self.prediction_mc_samples, axis=0)
-        preds = super(BaseBayesianFeedForward, self).predict_proba(x_tile, **kwargs).squeeze()
-        stack_preds = np.stack(np.split(preds, len(x)))
-        y_pred = stack_preds.mean(axis=1)
-        return y_pred.reshape(-1, 1)
-
-
+        probs = self.sample_predictive_distribution(X, samples=samples)
+        mean_probs = probs.mean(axis=1)
+        return mean_probs
 
 
 class DenseClassifier(BaseWrapper):
 
     def get_keras_model(self):
-        return
+        return FeedForward(n_hidden=self.n_hidden, activation=self.activation)
+
+
+class FlipoutClassifier(BaseBayesianClassifier):
+
+    def get_keras_model(self):
+        return FlipoutFeedForward(n_hidden=self.n_hidden, activation=self.activation, n_samples=self.n_samples_)
