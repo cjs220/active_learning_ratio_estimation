@@ -29,7 +29,7 @@ class _BaseFeedForward(tf.keras.Model):
         dense_layers = []
         for i in range(len(self.n_hidden)):
             dense_layer = self.dense_layer(units=self.n_hidden[i], activation=self.activation)
-            layer_name = f'Dense {i+1}'
+            layer_name = f'Dense {i + 1}'
             dense_layers.append((layer_name, dense_layer))
             return dense_layers
 
@@ -78,18 +78,18 @@ class BaseBayesianFeedForward(BaseFeedForward):
     prediction_mc_samples = 100
 
     def __init__(self, n_samples, n_hidden=(10, 10), activation='relu'):
-                                                                    self.n_samples = n_samples
-                                                                    super().__init__(n_hidden=n_hidden, activation=activation)
+        self.n_samples = n_samples
+        super().__init__(n_hidden=n_hidden, activation=activation)
 
     def dense_layer(self, units, activation, regularizer=None):
         raise NotImplementedError
 
     def predict_proba(self, x, **kwargs):
-                                     x_tile = np.repeat(x, self.prediction_mc_samples, axis=0)
-                                     preds = super(BaseBayesianFeedForward, self).predict_proba(x_tile, **kwargs).squeeze()
-                                     stack_preds = np.stack(np.split(preds, len(x)))
-                                     y_pred = stack_preds.mean(axis=1)
-                                     return y_pred.reshape(-1, 1)
+        x_tile = np.repeat(x, self.prediction_mc_samples, axis=0)
+        preds = super(BaseBayesianFeedForward, self).predict_proba(x_tile, **kwargs).squeeze()
+        stack_preds = np.stack(np.split(preds, len(x)))
+        y_pred = stack_preds.mean(axis=1)
+        return y_pred.reshape(-1, 1)
 
 
 class FeedForward(_BaseFeedForward):
@@ -102,7 +102,7 @@ class FeedForward(_BaseFeedForward):
 class FlipoutFeedForward(BaseBayesianFeedForward):
 
     def kl_divergence_function(self, q, p, _):
-                                          return tfd.kl_divergence(q, p) / tf.cast(self.n_samples, dtype=tf.float32)
+        return tfd.kl_divergence(q, p) / tf.cast(self.n_samples, dtype=tf.float32)
 
     def dense_layer(self, units, activation, regularizer=None):
         return tfp.layers.DenseFlipout(units=units,
