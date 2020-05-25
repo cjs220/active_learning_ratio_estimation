@@ -8,8 +8,7 @@ import sys
 
 from scipy.stats import chi2
 
-from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, build_feedforward,\
-    build_bayesian_flipout
+from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, DenseClassifier, FlipoutClassifier
 from active_learning_ratio_estimation.util import negative_log_likelihood_ratio, ideal_classifier_probs_from_simulator
 
 sys.path.insert(0, '..')
@@ -144,40 +143,31 @@ epochs = 5
 patience = 2
 validation_split = 0.1
 n_hidden = (40, 40)
-n_samples = int((1 - validation_split) * len(ds))
-
-fit_kwargs = dict(
-    epochs=epochs,
-    validation_split=validation_split,
-    verbose=2,
-    callbacks=[tf.keras.callbacks.EarlyStopping(restore_best_weights=True, patience=patience),
-               tf.keras.callbacks.TensorBoard()],
-)
 
 # regular, uncalibrated model
-regular_uncalibrated = SinglyParameterizedRatioModel(
-    build_fn=build_feedforward,
-    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', dropout=0.1, loss='bce', metrics=['accuracy']),
-    fit_kwargs=fit_kwargs,
-)
-
-# regular, calibrated model
-cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-regular_calibrated = SinglyParameterizedRatioModel(
-    build_fn=build_feedforward,
-    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', dropout=0),
-    fit_kwargs=fit_kwargs,
-    calibration_method='sigmoid',
-    cv=cv,
-)
+regular_estimator = DenseClassifier(n_hidden=n_hidden, activation='tanh',
+                                    epochs=epochs, patience=patience,
+                                    validation_split=validation_split)
+regular_uncalibrated = SinglyParameterizedRatioModel(estimator=regular_estimator, calibration_method=None)
 
 # bayesian, uncalibrated model
-bayesian_uncalibrated = SinglyParameterizedRatioModel(
-    build_fn=build_bayesian_flipout,
-    build_fn_kwargs=dict(n_hidden=n_hidden, activation='elu', n_samples=n_samples),
-    fit_kwargs=fit_kwargs,
-    calibration_method=None,
-)
+bayesian_estimator = FlipoutClassifier(n_hidden=n_hidden, activation='relu',
+                                       epochs=epochs, patience=patience,
+                                       validation_split=validation_split)
+bayesian_uncalibrated = SinglyParameterizedRatioModel(estimator=bayesian_estimator, calibration_method=None)
+
+# regular, calibrated model
+_regular_estimator = DenseClassifier(n_hidden=n_hidden, activation='tanh',
+                                     epochs=epochs, patience=patience,
+                                     validation_split=validation_split)
+cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
+regular_calibrated = SinglyParameterizedRatioModel(estimator=_regular_estimator, calibration_method='sigmoid', cv=cv)
+
+models = {
+    'Regular Uncalibrated': regular_uncalibrated,
+    'Bayesian Uncalibrated': bayesian_uncalibrated,
+    'Regular Calibrated': regular_calibrated
+}
 
 
 def fit_predict(clf):
@@ -186,11 +176,6 @@ def fit_predict(clf):
     return nllr_pred
 
 
-models = {
-    # 'Regular Uncalibrated': regular_uncalibrated,
-    'Bayesian Uncalibrated': bayesian_uncalibrated,
-    # 'Regular Calibrated': regular_calibrated
-}
 pred_contours = dict()
 
 for model_name, clf in models.items():

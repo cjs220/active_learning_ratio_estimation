@@ -22,6 +22,11 @@ def ideal_classifier_probs(l0, l1):
     return l1/(l0 + l1)
 
 
+def estimated_likelihood_ratio(probs):
+    assert len(probs.squeeze().shape) == 1
+    return probs / (1 - probs)
+
+
 def likelihood_ratio(x, simulator_func, theta_0, theta_1):
     l0, l1 = _get_likelihoods(x=x, simulator_func=simulator_func, theta_0=theta_0, theta_1=theta_1)
     return l1/l0

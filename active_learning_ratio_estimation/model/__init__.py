@@ -1,2 +1,2 @@
 from .ratio_model import UnparameterizedRatioModel, SinglyParameterizedRatioModel
-from .keras_models import build_bayesian_flipout, build_feedforward
+from .sklearn_wrappers import FlipoutClassifier, DenseClassifier
