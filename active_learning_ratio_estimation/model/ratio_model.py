@@ -13,7 +13,7 @@ from active_learning_ratio_estimation.util import tile_reshape, outer_prod_shape
 tfd = tfp.distributions
 
 
-class BaseRatioModel:
+class RatioModel:
     def __init__(self,
                  estimator,
                  calibration_method=None,
@@ -66,7 +66,7 @@ class BaseRatioModel:
         return -np.log(self.predict_likelihood_ratio_dataset(dataset))
 
 
-class UnparameterizedRatioModel(BaseRatioModel):
+class UnparameterizedRatioModel(RatioModel):
 
     def fit(self, dataset: UnparameterizedRatioDataset):
         assert isinstance(dataset, UnparameterizedRatioDataset)
@@ -84,7 +84,7 @@ class UnparameterizedRatioModel(BaseRatioModel):
         return self.estimator.predict_proba(model_input)
 
 
-class SinglyParameterizedRatioModel(BaseRatioModel):
+class SinglyParameterizedRatioModel(RatioModel):
 
     def fit(self, dataset: SinglyParameterizedRatioDataset):
         assert isinstance(dataset, SinglyParameterizedRatioDataset)
@@ -105,11 +105,11 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
         return self.estimator.predict_proba(model_input)
 
     def predict_dataset(self, dataset: SinglyParameterizedRatioDataset):
-        assert self.theta_0_ == dataset.theta_0
+        assert np.all(self.theta_0_ == dataset.theta_0)
         return super().predict_dataset(dataset)
 
     def predict_proba_dataset(self, dataset: SinglyParameterizedRatioDataset):
-        assert self.theta_0_ == dataset.theta_0
+        assert np.all(self.theta_0_ == dataset.theta_0)
         return super().predict_proba_dataset(dataset)
 
     def nllr_param_scan(self, x: np.ndarray, param_grid: ParamGrid, meshgrid_shape: bool = True):

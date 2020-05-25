@@ -36,7 +36,7 @@ class ParamIterator:
 class SingleParamIterator(ParamIterator):
     # TODO: maybe delete
 
-    def __init__(self, theta: Union[Number, np.array], n_samples: int):
+    def __init__(self, theta: Union[Number, np.array], n_samples: int = 1):
         if isinstance(theta, Number):
             theta = np.array([theta])
 
@@ -166,10 +166,13 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         theta_1s = np.zeros((len(x1), len(theta_0)))
 
         if include_nllr:
+            ll0_x0 = np.zeros_like(y0)
+            ll0_x1 = np.zeros_like(y0)
             ll1_x0 = np.zeros_like(y0)
             ll1_x1 = np.zeros_like(y0)
 
         for i, theta_1 in enumerate(theta_1_iterator):
+            # TODO: perhaps wrap this in a tf.function
             sim1 = build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
             stop = (i+1)*n_samples_per_theta
@@ -177,7 +180,9 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             x1[start:stop, :] = ensure_2d(x_i)
             theta_1s[start:stop, :] = theta_1
             if include_nllr:
-                ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
                 ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
 
         y1 = np.ones_like(y0)
@@ -187,7 +192,7 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         theta_1s = concat_repeat(theta_1s, 2, axis=0)
 
         if include_nllr:
-            ll0 = sim0.log_prob(x).numpy().squeeze()
+            ll0 = np.concatenate([ll0_x0, ll0_x1], axis=0)
             ll1 = np.concatenate([ll1_x0, ll1_x1], axis=0)
             nllr = -(ll1 - ll0)
         else:

@@ -1,2 +1,2 @@
-from .ratio_model import UnparameterizedRatioModel, SinglyParameterizedRatioModel
+from .ratio_model import RatioModel, UnparameterizedRatioModel, SinglyParameterizedRatioModel
 from .sklearn_wrappers import FlipoutClassifier, DenseClassifier

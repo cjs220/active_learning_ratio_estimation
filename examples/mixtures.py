@@ -6,6 +6,8 @@
 
 import sys
 
+from sklearn import clone
+
 sys.path.insert(0, '..')
 
 import numpy as np
@@ -67,7 +69,7 @@ ds = UnparameterizedRatioDataset(
 
 
 # hyperparams
-epochs = 20
+epochs = 2
 patience = 5
 validation_split = 0.1
 n_hidden = (10, 10)
@@ -90,11 +92,8 @@ bayesian_uncalibrated = UnparameterizedRatioModel(estimator=bayesian_estimator, 
                                                   normalize_input=False)
 
 # regular, calibrated model
-_regular_estimator = DenseClassifier(n_hidden=n_hidden, activation='tanh',
-                                     epochs=epochs, patience=patience,
-                                     validation_split=validation_split)
 cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-regular_calibrated = UnparameterizedRatioModel(estimator=_regular_estimator, calibration_method='sigmoid',
+regular_calibrated = UnparameterizedRatioModel(estimator=clone(regular_estimator), calibration_method='sigmoid',
                                                normalize_input=False, cv=cv)
 
 models = {
@@ -129,7 +128,6 @@ for model_name, model in models.items():
     y_preds[model_name] = y_pred
     nllrs[model_name] = nllr
 
-
 # In[8]:
 
 
@@ -138,7 +136,6 @@ y_preds['Ideal'] = ideal_classifier_probs_from_simulator(x, triple_mixture, thet
 nllrs['True'] = negative_log_likelihood_ratio(x, triple_mixture, theta_0, theta_1)
 y_preds = pd.DataFrame(y_preds, index=x)
 nllrs = pd.DataFrame(nllrs, index=x)
-
 
 # In[9]:
 
@@ -152,7 +149,6 @@ plt.xlabel('$x$')
 plt.tight_layout()
 plt.show()
 
-
 # In[10]:
 
 
@@ -164,6 +160,7 @@ plt.title('Negative log-likelihood ratio')
 plt.xlabel('$x$')
 plt.tight_layout()
 plt.show()
+
 
 # In[11]:
 

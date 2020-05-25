@@ -7,6 +7,7 @@
 import sys
 
 from scipy.stats import chi2
+from sklearn import clone
 
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, DenseClassifier, FlipoutClassifier
 from active_learning_ratio_estimation.util import negative_log_likelihood_ratio, ideal_classifier_probs_from_simulator
@@ -109,7 +110,7 @@ def nllr_exact(alpha, beta, X):
     return -tf.keras.backend.sum((p_theta.log_prob(X) - max_log_prob))
 
 
-num = 10
+num = 30
 alpha_bounds = (0.75, 1.25)
 beta_bounds = (-2, 0)
 param_grid = ParamGrid(bounds=[alpha_bounds, beta_bounds], num=num)
@@ -139,7 +140,7 @@ ds = SinglyParameterizedRatioDataset(
 
 
 # hyperparams
-epochs = 5
+epochs = 20
 patience = 2
 validation_split = 0.1
 n_hidden = (40, 40)
@@ -157,17 +158,12 @@ bayesian_estimator = FlipoutClassifier(n_hidden=n_hidden, activation='relu',
 bayesian_uncalibrated = SinglyParameterizedRatioModel(estimator=bayesian_estimator, calibration_method=None)
 
 # regular, calibrated model
-_regular_estimator = DenseClassifier(n_hidden=n_hidden, activation='tanh',
-                                     epochs=epochs, patience=patience,
-                                     validation_split=validation_split)
 cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-regular_calibrated = SinglyParameterizedRatioModel(estimator=_regular_estimator, calibration_method='sigmoid', cv=cv)
+regular_calibrated = SinglyParameterizedRatioModel(estimator=clone(regular_estimator),
+                                                   calibration_method='sigmoid',
+                                                   cv=cv)
 
-models = {
-    'Regular Uncalibrated': regular_uncalibrated,
-    'Bayesian Uncalibrated': bayesian_uncalibrated,
-    'Regular Calibrated': regular_calibrated
-}
+model = bayesian_uncalibrated
 
 
 def fit_predict(clf):
@@ -176,11 +172,7 @@ def fit_predict(clf):
     return nllr_pred
 
 
-pred_contours = dict()
-
-for model_name, clf in models.items():
-    print(f'\n******* Fitting {model_name} *******\n')
-    pred_contours[model_name] = fit_predict(clf)
+pred_contours = fit_predict(model)
 
 
 # %%
@@ -199,18 +191,14 @@ def plot_contours(contours, ax):
 
 
 f, axarr = plt.subplots(2, sharex=True)
-for i, contours in enumerate([exact_contours, list(pred_contours.values())[0]]):
+for i, contours in enumerate([exact_contours, pred_contours]):
     plot_contours(contours, ax=axarr[i])
 
 axarr[0].legend(loc='upper center', fancybox=True, shadow=True)
-theta_1 = np.array([0.5, 0.5]).astype(np.float32)
-p_pred = clf.predict_proba(X_true, theta_1=theta_1)[:, 1]
-p_ideal = ideal_classifier_probs_from_simulator(simulator_func=MultiDimToyModel,
-                                                x=X_true,
-                                                theta_0=theta_0,
-                                                theta_1=theta_1)
-average_diff = np.abs(p_pred - p_ideal).mean()
-contour_mae = np.abs(contours - exact_contours).mean()
-print('Average diff: ', average_diff)
+contour_mae = np.abs(pred_contours - exact_contours).mean()
 print('Contour MAE: ', contour_mae)
-plt.show()
+plt.savefig('contours.pdf')
+
+nllr_pred_ds = model.predict_nllr_dataset(ds)
+ds_mae = np.abs(nllr_pred_ds - ds.nllr).mean()
+print('Dataset MAE, ', ds_mae)
