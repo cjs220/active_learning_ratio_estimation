@@ -3,6 +3,7 @@ from numbers import Number
 from typing import List, Callable, Union, Sequence
 
 import numpy as np
+import tensorflow as tf
 import tensorflow_probability as tfp
 
 from active_learning_ratio_estimation.util import ensure_2d, ensure_array, stack_repeat, build_simulator, concat_repeat
@@ -175,14 +176,21 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             sim1 = build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
             stop = (i+1)*n_samples_per_theta
-            x_i = sim1.sample(n_samples_per_theta).numpy()
-            x1[start:stop, :] = ensure_2d(x_i)
-            theta_1s[start:stop, :] = theta_1
-            if include_nllr:
-                ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
-                ll0_x1[start:stop] = sim0.log_prob(x1[start:stop, :]).numpy().squeeze()
-                ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
-                ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
+
+            def _simulate():
+                x_i = sim1.sample(n_samples_per_theta).numpy()
+                x1[start:stop, :] = ensure_2d(x_i)
+                theta_1s[start:stop, :] = theta_1
+                if include_nllr:
+                    ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
+                    ll0_x1[start:stop] = sim0.log_prob(x1[start:stop, :]).numpy().squeeze()
+                    ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
+                    ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
+
+            if isinstance(sim0, tfd.Distribution):
+                _simulate = tf.function(_simulate)
+
+            _simulate()
 
         y1 = np.ones_like(y0)
         x = np.concatenate([x0, x1], axis=0)

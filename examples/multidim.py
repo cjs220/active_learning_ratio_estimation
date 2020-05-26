@@ -10,7 +10,6 @@ from scipy.stats import chi2
 from sklearn import clone
 
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, DenseClassifier, FlipoutClassifier
-from active_learning_ratio_estimation.util import negative_log_likelihood_ratio, ideal_classifier_probs_from_simulator
 
 sys.path.insert(0, '..')
 
@@ -74,7 +73,6 @@ true_beta = -1
 p_true = MultiDimToyModel(alpha=1, beta=-1)
 X_true = p_true.sample(500)
 # fig = corner(X_true, bins=20, smooth=0.85, labels=["X0", "X1", "X2", "X3", "X4"])
-# plt.show()
 
 
 # In[8]:
@@ -102,38 +100,14 @@ print(f'Exact MLE: alpha={alpha_mle}, beta={beta_mle}')
 # %%
 
 
-# Calculate contours of exact negative log likelihood ratio
-
-@tf.function
-def nllr_exact(alpha, beta, X):
-    p_theta = MultiDimToyModel(alpha=alpha, beta=beta)
-    return -tf.keras.backend.sum((p_theta.log_prob(X) - max_log_prob))
-
-
-num = 30
-alpha_bounds = (0.75, 1.25)
-beta_bounds = (-2, 0)
-param_grid = ParamGrid(bounds=[alpha_bounds, beta_bounds], num=num)
-Alphas, Betas = param_grid.meshgrid()
-
-exact_contours = np.zeros_like(Alphas)
-for i in range(num):
-    for j in range(num):
-        alpha = tf.constant(Alphas[i, j])
-        beta = tf.constant(Betas[i, j])
-        nllr = nllr_exact(alpha, beta, X_true)
-        exact_contours[i, j] = nllr
-
-# %%
-
-
 # create dataset for fitting
+param_grid_train = ParamGrid(bounds=[(-3, 3), (-3, 3)], num=30)
 theta_0 = np.array([alpha_mle, beta_mle])
 ds = SinglyParameterizedRatioDataset(
     simulator_func=MultiDimToyModel,
     theta_0=theta_0,
-    theta_1_iterator=param_grid,
-    n_samples_per_theta=int(1e4)
+    theta_1_iterator=param_grid_train,
+    n_samples_per_theta=int(1e3)
 )
 
 # %%
@@ -163,25 +137,52 @@ regular_calibrated = SinglyParameterizedRatioModel(estimator=clone(regular_estim
                                                    calibration_method='sigmoid',
                                                    cv=cv)
 
-model = regular_calibrated
+model = bayesian_uncalibrated
 
 
-def fit_predict(clf):
+def fit_predict(clf, grid):
     clf.fit(ds)
-    nllr_pred = clf.nllr_param_scan(x=X_true, param_grid=param_grid)
+    nllr_pred = clf.nllr_param_scan(x=X_true, param_grid=grid)
     return nllr_pred
 
 
-pred_contours = fit_predict(model)
+num_plot = 100
+alpha_bounds = (0.75, 1.25)
+beta_bounds = (-2, 0)
+plot_grid = ParamGrid(bounds=[alpha_bounds, beta_bounds], num=num_plot)
+Alphas, Betas = plot_grid.meshgrid()
+
+# fit model and predict contours
+pred_contours = fit_predict(model, grid=plot_grid)
 
 
 # %%
+# Calculate contours of exact negative log likelihood ratio
+
+@tf.function
+def nllr_exact(alpha, beta, X):
+    p_theta = MultiDimToyModel(alpha=alpha, beta=beta)
+    return -tf.keras.backend.sum((p_theta.log_prob(X) - max_log_prob))
+
+
+exact_contours = np.zeros_like(Alphas)
+for i in range(num_plot):
+    for j in range(num_plot):
+        alpha = tf.constant(Alphas[i, j])
+        beta = tf.constant(Betas[i, j])
+        nllr = nllr_exact(alpha, beta, X_true)
+        exact_contours[i, j] = nllr
+
+
+# %%
+# Plot exact and predicted contours
+
 
 def plot_contours(contours, ax):
-    ax.contour(*param_grid.meshgrid(), 2 * contours, levels=[chi2.ppf(0.683, df=2),
-                                                             chi2.ppf(0.9545, df=2),
-                                                             chi2.ppf(0.9973, df=2)], colors=["w"])
-    ax.contourf(*param_grid.meshgrid(), 2 * contours, vmin=0, vmax=30)
+    ax.contour(*plot_grid.meshgrid(), 2 * contours, levels=[chi2.ppf(0.683, df=2),
+                                                            chi2.ppf(0.9545, df=2),
+                                                            chi2.ppf(0.9973, df=2)], colors=["w"])
+    ax.contourf(*plot_grid.meshgrid(), 2 * contours, vmin=0, vmax=30)
     ax.plot([true_alpha], [true_beta], "ro", markersize=8, label='True')
     ax.plot([alpha_mle], [beta_mle], "go", markersize=8, label='MLE')
     ax.set_xlim(*alpha_bounds)
@@ -198,4 +199,3 @@ axarr[0].legend(loc='upper center', fancybox=True, shadow=True)
 contour_mae = np.abs(pred_contours - exact_contours).mean()
 print('Contour MAE: ', contour_mae)
 plt.savefig('contours.pdf')
-
