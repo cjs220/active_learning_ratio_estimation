@@ -180,8 +180,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             theta_1s[start:stop, :] = theta_1
             if include_nllr:
                 ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
-                ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
-                ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
+                ll0_x1[start:stop] = sim0.log_prob(x1[start:stop, :]).numpy().squeeze()
+                ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
                 ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
 
         y1 = np.ones_like(y0)
@@ -201,16 +201,3 @@ class SinglyParameterizedRatioDataset(RatioDataset):
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
-
-
-if __name__ == '__main__':
-    simulator_func = lambda x, y: tfd.Normal(loc=x, scale=y)
-    theta_0 = np.array([0.0, 1.0])
-    theta_1_iter = ParamGrid(bounds=[(0, 1), (0, 10)], num=10)
-    ds = SinglyParameterizedRatioDataset(
-        simulator_func=simulator_func,
-        theta_0=theta_0,
-        theta_1_iterator=theta_1_iter,
-        n_samples_per_theta=10
-    )
-    pass
