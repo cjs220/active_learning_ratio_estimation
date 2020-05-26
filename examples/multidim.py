@@ -163,7 +163,7 @@ regular_calibrated = SinglyParameterizedRatioModel(estimator=clone(regular_estim
                                                    calibration_method='sigmoid',
                                                    cv=cv)
 
-model = bayesian_uncalibrated
+model = regular_calibrated
 
 
 def fit_predict(clf):
@@ -199,6 +199,3 @@ contour_mae = np.abs(pred_contours - exact_contours).mean()
 print('Contour MAE: ', contour_mae)
 plt.savefig('contours.pdf')
 
-nllr_pred_ds = model.predict_nllr_dataset(ds)
-ds_mae = np.abs(nllr_pred_ds - ds.nllr).mean()
-print('Dataset MAE, ', ds_mae)

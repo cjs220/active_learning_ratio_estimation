@@ -34,7 +34,6 @@ class ParamIterator:
 
 
 class SingleParamIterator(ParamIterator):
-    # TODO: maybe delete
 
     def __init__(self, theta: Union[Number, np.array], n_samples: int = 1):
         if isinstance(theta, Number):
