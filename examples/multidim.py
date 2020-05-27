@@ -107,14 +107,14 @@ ds = SinglyParameterizedRatioDataset(
     simulator_func=MultiDimToyModel,
     theta_0=theta_0,
     theta_1_iterator=param_grid_train,
-    n_samples_per_theta=int(1e3)
+    n_samples_per_theta=500
 )
 
 # %%
 
 
 # hyperparams
-epochs = 20
+epochs = 1
 patience = 2
 validation_split = 0.1
 n_hidden = (40, 40)
@@ -146,7 +146,7 @@ def fit_predict(clf, grid):
     return nllr_pred
 
 
-num_plot = 100
+num_plot = 50
 alpha_bounds = (0.75, 1.25)
 beta_bounds = (-2, 0)
 plot_grid = ParamGrid(bounds=[alpha_bounds, beta_bounds], num=num_plot)

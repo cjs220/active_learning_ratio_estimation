@@ -75,7 +75,8 @@ class RatioDataset:
                  theta_1s: np.array,
                  y: np.array = None,
                  nllr: np.array = None,
-                 shuffle: bool = True):
+                 shuffle: bool = True
+                 ):
         self.x = ensure_2d(x)
         self.theta_0s = theta_0s
         self.theta_1s = theta_1s
@@ -122,7 +123,8 @@ class UnparameterizedRatioDataset(RatioDataset):
                  theta_0: Union[Number, np.array],
                  theta_1: Union[Number, np.array],
                  n_samples_per_theta: int,
-                 shuffle: bool = True):
+                 shuffle: bool = True
+                 ):
         theta_0, theta_1 = map(ensure_array, [theta_0, theta_1])
         assert len(theta_0.shape) == 1 == len(theta_1.shape)
         self.theta_0 = theta_0
@@ -152,7 +154,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                  theta_1_iterator: ParamIterator,
                  n_samples_per_theta: int,
                  shuffle: bool = True,
-                 include_nllr: bool = True):
+                 include_nllr: bool = False
+                 ):
 
         theta_0 = ensure_array(theta_0)
         assert len(theta_0.shape) == 1
@@ -176,21 +179,14 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             sim1 = build_simulator(simulator_func, theta_1)
             start = i*n_samples_per_theta
             stop = (i+1)*n_samples_per_theta
-
-            def _simulate():
-                x_i = sim1.sample(n_samples_per_theta).numpy()
-                x1[start:stop, :] = ensure_2d(x_i)
-                theta_1s[start:stop, :] = theta_1
-                if include_nllr:
-                    ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
-                    ll0_x1[start:stop] = sim0.log_prob(x1[start:stop, :]).numpy().squeeze()
-                    ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
-                    ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
-
-            if isinstance(sim0, tfd.Distribution):
-                _simulate = tf.function(_simulate)
-
-            _simulate()
+            x_i = sim1.sample(n_samples_per_theta).numpy()
+            x1[start:stop, :] = ensure_2d(x_i)
+            theta_1s[start:stop, :] = theta_1
+            if include_nllr:
+                ll0_x0[start:stop] = sim0.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll0_x1[start:stop] = sim0.log_prob(x1[start:stop, :]).numpy().squeeze()
+                ll1_x0[start:stop] = sim1.log_prob(x0[start:stop, :]).numpy().squeeze()
+                ll1_x1[start:stop] = sim1.log_prob(x1[start:stop, :]).numpy().squeeze()
 
         y1 = np.ones_like(y0)
         x = np.concatenate([x0, x1], axis=0)

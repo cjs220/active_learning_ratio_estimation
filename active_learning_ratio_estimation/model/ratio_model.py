@@ -59,8 +59,8 @@ class RatioModel:
         return self._call_on_dataset('predict_proba', dataset)
 
     def predict_likelihood_ratio_dataset(self, dataset: RatioDataset):
-       probs = self.predict_proba_dataset(dataset)
-       return estimated_likelihood_ratio(probs)
+        probs = self.predict_proba_dataset(dataset)
+        return estimated_likelihood_ratio(probs)
 
     def predict_nllr_dataset(self, dataset):
         return -np.log(self.predict_likelihood_ratio_dataset(dataset))
@@ -113,12 +113,24 @@ class SinglyParameterizedRatioModel(RatioModel):
         return super().predict_proba_dataset(dataset)
 
     def nllr_param_scan(self, x: np.ndarray, param_grid: ParamGrid, meshgrid_shape: bool = True):
-        # calculate the negative likelihood ratio across parameter grid for given x
-        theta_1 = np.concatenate([tile_reshape(theta, reps=len(x)) for theta in param_grid.values], axis=0)
-        x_ = concat_repeat(x, len(param_grid), axis=0)
-        nllr_pred = self.predict_negative_log_likelihood_ratio(x_, theta_1)
-        nllr_pred_total = np.stack(np.split(nllr_pred, len(param_grid.values))).sum(axis=1)
+        total_data_points = len(x) * len(param_grid)
+        n_millions = int(np.ceil(total_data_points / 1e6))
+        # if the total number of data points is > 1e6, split them up so we don't have to keep all in memory
+        param_grid_splits = np.array_split(param_grid.values, n_millions)
+        nllr = []
+
+        for param_grid_split in param_grid_splits:
+            theta_1 = np.concatenate([tile_reshape(theta, reps=len(x))
+                                      for theta in param_grid_split], axis=0)
+            x_ = concat_repeat(x, len(param_grid_split), axis=0)
+            # predict nllr for individual data points
+            nllr_pred = self.predict_negative_log_likelihood_ratio(x_, theta_1)
+            # predict nllr over the whole dataset x for each theta
+            nllr_pred_aggregate = np.stack(np.split(nllr_pred, len(param_grid_split))).sum(axis=1)
+            nllr.append(nllr_pred_aggregate)
+
+        nllr = np.concatenate(nllr)
         if meshgrid_shape:
             meshgrid = param_grid.meshgrid()
-            nllr_pred_total = outer_prod_shape_to_meshgrid_shape(nllr_pred_total, meshgrid[0])
-        return nllr_pred_total
+            nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
+        return nllr
