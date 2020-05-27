@@ -53,9 +53,11 @@ class ActiveLearner:
         self.ratio_model.fit(self.dataset)
 
     def model_eval(self):
-        pred_nllr = self.ratio_model.predict_nllr_dataset(self.test_dataset)
-        actual_nllr = self.test_dataset.nllr
-        return np.abs(pred_nllr - actual_nllr).mean()
+        probs = self.ratio_model.predict_proba_dataset(self.test_dataset)
+        actual_lr = np.exp(-self.dataset.nllr)
+        ideal_probs = actual_lr/(1 + actual_lr)
+        squared_error = (probs - ideal_probs)**2
+        return squared_error.mean()
 
     @property
     def remaining_thetas(self):
