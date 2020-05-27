@@ -4,24 +4,17 @@
 # In[5]:
 
 
-import sys
-
-from scipy.stats import chi2
-from sklearn import clone
-
-from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, DenseClassifier, FlipoutClassifier
-
-sys.path.insert(0, '..')
-
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import chi2
 import tensorflow as tf
 import tensorflow_probability as tfp
-
 tfd = tfp.distributions
+from sklearn import clone
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.datasets import make_sparse_spd_matrix
 
+from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel, DenseClassifier, FlipoutClassifier
 from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
