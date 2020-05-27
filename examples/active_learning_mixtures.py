@@ -1,9 +1,33 @@
 import numpy as np
+import tensorflow as tf
+import tensorflow_probability as tfp
+tfd = tfp.distributions
 
 from active_learning_ratio_estimation.active_learning.active_learner import ActiveLearner
 from active_learning_ratio_estimation.dataset import ParamIterator, ParamGrid, SinglyParameterizedRatioDataset
 from active_learning_ratio_estimation.model import FlipoutClassifier, SinglyParameterizedRatioModel
-from .mixtures import triple_mixture
+
+
+#%%
+
+
+def triple_mixture(gamma):
+    mixture_probs = [
+        0.5 * (1 - gamma),
+        0.5 * (1 - gamma),
+        gamma
+    ]
+    gaussians = [
+        tfd.Normal(loc=-2, scale=0.75),
+        tfd.Normal(loc=0, scale=2),
+        tfd.Normal(loc=1, scale=0.5)
+    ]
+    dist = tfd.Mixture(
+        cat=tfd.Categorical(probs=mixture_probs),
+        components=gaussians
+    )
+    return dist
+
 
 
 #%%
@@ -19,7 +43,7 @@ param_grid = ParamGrid(bounds=[theta_bounds], num=num_grid)
 
 # %%
 test_param_points = 10
-test_iterator = ParamIterator([np.random.rand() for _ in range(test_param_points)])
+test_iterator = ParamIterator([np.random.rand(1) for _ in range(test_param_points)])
 test_dataset = SinglyParameterizedRatioDataset(simulator_func=triple_mixture,
                                                theta_0=theta_0,
                                                theta_1_iterator=test_iterator,

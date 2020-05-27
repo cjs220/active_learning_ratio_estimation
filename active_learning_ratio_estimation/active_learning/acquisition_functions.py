@@ -6,7 +6,7 @@ def random(probs):
 
 
 def predictive_entropy(probs):
-    return - probs*np.log(probs).sum(axis=1)
+    return (- probs*np.log(probs)).sum(axis=1)
 
 
 acquisition_functions = {

@@ -3,6 +3,7 @@ from typing import Union, Callable
 
 import numpy as np
 import pandas as pd
+from sklearn import clone
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import WhiteKernel, RBF
 
@@ -10,6 +11,7 @@ from active_learning_ratio_estimation.active_learning.acquisition_functions impo
 from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset, SingleParamIterator, \
     ParamIterator
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel
+from active_learning_ratio_estimation.util import ensure_array
 
 
 class ActiveLearner:
@@ -24,7 +26,7 @@ class ActiveLearner:
                  acquisition_function: Union[str, Callable] = 'entropy',
                  ucb_kappa: float = 1.0,
                  ):
-        self.theta_0 = self.theta_0
+        self.theta_0 = theta_0
         self.n_samples_per_theta = n_samples_per_theta
         self.dataset = SinglyParameterizedRatioDataset(simulator_func=simulator_func,
                                                        theta_0=theta_0,
@@ -33,7 +35,7 @@ class ActiveLearner:
         self.ratio_model = ratio_model
         self.model_fit()
         self.param_grid = total_param_grid
-        self.trialed_thetas = [theta for theta in np.unique(self.dataset.theta_1s)]
+        self.trialed_thetas = [ensure_array(theta) for theta in np.unique(self.dataset.theta_1s)]
         self.simulator_func = simulator_func
         self.test_dataset = test_dataset
         self._test_history = []
@@ -61,7 +63,9 @@ class ActiveLearner:
 
     @property
     def remaining_thetas(self):
-        return list(set(self.param_grid.values) - set(self.trialed_thetas))
+        remaining_thetas = [theta for theta in self.param_grid.values if theta not in self.trialed_thetas]
+        return remaining_thetas
+        # return list(set(self.param_grid.values) - set(self.trialed_thetas))
 
     @property
     def test_history(self):
@@ -88,8 +92,10 @@ class ActiveLearner:
         for theta in self.trialed_thetas:
             x = self.dataset.x[self.dataset.theta_1s == theta]
             probs = self.ratio_model.predict_proba(x, theta_1=theta)
+            assert probs.shape == (len(x), 2)
             U_theta_x = self.acquisition_function(probs)
-            U_theta.append(U_theta_x.mean(axis=1))
+            assert U_theta_x.shape == (len(x),)
+            U_theta.append(U_theta_x.mean())
         return U_theta
 
     def choose_theta(self):
@@ -102,10 +108,11 @@ class ActiveLearner:
         self.gp.fit(X_train, y_train)
 
         X_test = np.array(self.remaining_thetas)
-        mean, std = self.gp.predict(X_test)
+        mean, std = self.gp.predict(X_test, return_std=True)
         ucb = mean + self.ucb_kappa * std
 
         self.gp_history.append(dict(
+            gp=clone(self.gp),
             X_train=X_train,
             y_train=y_train,
             X_test=X_test,
