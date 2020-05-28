@@ -19,17 +19,21 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
                  epochs: int = 10,
                  validation_split: float = 0.2,
                  patience: int = 2,
+                 verbose: int = 2,
                  ):
         self.n_hidden = n_hidden
         self.activation = activation
 
+        # compile arguments
         self.loss = loss
         self.optimizer = optimizer
         self.run_eagerly = run_eagerly
 
+        # fit arguments
         self.epochs = epochs
         self.validation_split = validation_split
         self.patience = patience
+        self.verbose = verbose
 
     def get_keras_model(self) -> tf.keras.Model:
         raise NotImplementedError
@@ -43,7 +47,11 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         metrics = ['accuracy']
         model.compile(loss=self.loss, optimizer=self.optimizer, run_eagerly=self.run_eagerly, metrics=metrics)
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=self.patience, restore_best_weights=True)]
-        model.fit(X, y, epochs=self.epochs, callbacks=callbacks, verbose=2, validation_split=self.validation_split)
+        model.fit(X, y,
+                  epochs=self.epochs,
+                  callbacks=callbacks,
+                  verbose=self.verbose,
+                  validation_split=self.validation_split)
         self.model_ = model
         return self
 

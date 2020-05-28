@@ -19,6 +19,14 @@ def build_singly_parameterized_input(x, theta_1s):
     return np.concatenate([ensure_2d(x), ensure_2d(theta_1s)], axis=1)
 
 
+def _concat_if_not_none(x: Union[np.ndarray, None], y: Union[np.ndarray, None]) -> Union[np.ndarray, None]:
+    if x is not None and y is not None:
+        concat = np.concatenate([x, y], axis=0)
+    else:
+        concat = None
+    return concat
+
+
 class RatioDataset:
     _possibly_none_attrs = ('y', 'log_prob_0', 'log_prob_1')
 
@@ -70,24 +78,14 @@ class RatioDataset:
     def __len__(self):
         return len(self.x)
 
-    def __add__(self, other):
-
-        def _concat_attr(attr_name):
-            this_one = getattr(self, attr_name)
-            that_one = getattr(other, attr_name)
-            return np.concatenate([this_one, that_one], axis=0)
-
-        kwargs = {}
-        for attr_name in ('x', 'theta_0s', 'theta_1s'):
-            kwargs[attr_name] = _concat_attr(attr_name)
-
-        for attr_name in self._possibly_none_attrs:
-            try:
-                kwargs[attr_name] = _concat_attr(attr_name)
-            except ValueError:
-                # attr is None
-                pass
-        return self.__class__(**kwargs)
+    def _concat_data(self, other):
+        # used to define __add__ in subclasses
+        data = dict()
+        for attr in ['x', 'theta_0s', 'theta_1s'] + list(self._possibly_none_attrs):
+            this_one = getattr(self, attr)
+            that_one = getattr(other, attr)
+            data[attr] = _concat_if_not_none(this_one, that_one)
+        return data
 
 
 class UnparameterizedRatioDataset(RatioDataset):
@@ -240,3 +238,9 @@ class SinglyParameterizedRatioDataset(RatioDataset):
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
+
+    def __add__(self, other):
+        assert self.theta_0 == other.theta_0
+        concated_data = self._concat_data(other)
+        concated_data.pop('theta_0s')
+        return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)

@@ -19,16 +19,20 @@ class RatioModel:
                  calibration_method=None,
                  cv=1,
                  normalize_input=True):
+        self.calibration_method = calibration_method
+        if calibration_method is not None:
+            estimator = CalibratedClassifierCV(base_estimator=self.estimator,
+                                               method=self.calibration_method,
+                                               cv=cv)
 
         steps = [('clf', estimator)]
         if normalize_input:
             steps.insert(0, ('StandardScaler', StandardScaler()))
         self.estimator = Pipeline(steps=steps)
-        self.calibration_method = calibration_method
-        if calibration_method is not None:
-            self.estimator = CalibratedClassifierCV(base_estimator=self.estimator,
-                                                    method=self.calibration_method,
-                                                    cv=cv)
+
+    @property
+    def keras_model_(self):
+        return self.estimator.steps[-1][1].model_
 
     def fit(self, dataset: RatioDataset):
         model_input = dataset.build_input()
