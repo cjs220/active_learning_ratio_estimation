@@ -71,12 +71,24 @@ class RatioDataset:
             except TypeError:
                 # arr is None
                 pass
+        return self
 
     def build_input(self):
         raise NotImplementedError
 
     def __len__(self):
         return len(self.x)
+
+    def _get_item_arrays(self, item):
+        def _get_item_get_attr(attr_name):
+            attr = getattr(self, attr_name)
+            if attr is None:
+                return attr
+            else:
+                return attr.__getitem__(item)
+
+        return {attr_name: _get_item_get_attr(attr_name)
+                for attr_name in ['x', 'theta_0s', 'theta_1s'] + list(self._possibly_none_attrs)}
 
     def _concat_data(self, other):
         # used to define __add__ in subclasses
@@ -149,6 +161,12 @@ class UnparameterizedRatioDataset(RatioDataset):
 
     def build_input(self):
         return build_unparameterized_input(self.x)
+
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        arrays.pop('theta_1s')
+        return self.__class__(**arrays, theta_0=self.theta_0, theta_1=self.theta_1, shuffle=False)
 
 
 class SinglyParameterizedRatioDataset(RatioDataset):
@@ -244,3 +262,8 @@ class SinglyParameterizedRatioDataset(RatioDataset):
         concated_data = self._concat_data(other)
         concated_data.pop('theta_0s')
         return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)
+
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        return self.__class__(**arrays, theta_0=self.theta_0, shuffle=False)

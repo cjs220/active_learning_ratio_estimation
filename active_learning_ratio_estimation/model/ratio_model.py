@@ -21,7 +21,7 @@ class RatioModel:
                  normalize_input=True):
         self.calibration_method = calibration_method
         if calibration_method is not None:
-            estimator = CalibratedClassifierCV(base_estimator=self.estimator,
+            estimator = CalibratedClassifierCV(base_estimator=estimator,
                                                method=self.calibration_method,
                                                cv=cv)
 
