@@ -137,5 +137,6 @@ class SinglyParameterizedRatioModel(RatioModel):
         mle = param_grid[np.argmin(nllr)]
         if meshgrid_shape:
             meshgrid = param_grid.meshgrid()
+            # TODO: see if this line can be replaced by a simple reshaping
             nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
         return nllr, mle

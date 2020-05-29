@@ -65,7 +65,7 @@ class ActiveLearner:
         self.gp = None
         self.gp_history = []
 
-    def fit(self, n_iter):
+    def fit(self, n_iter: int):
         for i in range(n_iter):
             logger.info(f'Active learning iteration {i +1}/{n_iter}')
             self.step()
@@ -126,13 +126,16 @@ class ActiveLearner:
         for theta in self.trialed_thetas:
             mask = self.dataset.theta_1s == theta
             x = self.dataset.x[mask]
+            # TODO: the following section assumes that the ratio model that
+            #  a) is Bayesian
+            #  b) has as standard scaler
+            #  But this is not ideal as we might want to test some of the acquisition functions with a regular NN
             theta_1s = self.dataset.theta_1s[mask]
             model_input = build_singly_parameterized_input(x=x, theta_1s=theta_1s)
             scaler, clf = self.ratio_model.estimator
             model_input = scaler.transform(model_input)
             sampled_probs = clf.sample_predictive_distribution(model_input)
-            # probs = self.ratio_model.predict_proba(x, theta_1=theta)
-            # assert probs.shape == (len(x), 2)
+
             U_theta_x = self.acquisition_function(sampled_probs)
             assert U_theta_x.shape == (len(x),)
             U_theta.append(U_theta_x.mean())
