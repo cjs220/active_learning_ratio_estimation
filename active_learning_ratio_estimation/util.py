@@ -23,7 +23,6 @@ def ideal_classifier_probs(l0, l1):
 
 
 def estimated_likelihood_ratio(probs):
-    assert len(probs.squeeze().shape) == 1
     return probs / (1 - probs)
 
 

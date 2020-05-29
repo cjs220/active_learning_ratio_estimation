@@ -3,6 +3,7 @@ from numbers import Number
 from typing import Union, Callable
 
 import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn import clone
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -11,7 +12,7 @@ import tensorflow as tf
 
 from active_learning_ratio_estimation.active_learning.acquisition_functions import acquisition_functions
 from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset, SingleParamIterator, \
-    ParamIterator
+    ParamIterator, build_singly_parameterized_input
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel
 from active_learning_ratio_estimation.util import ensure_array, ideal_classifier_probs
 
@@ -57,7 +58,7 @@ class ActiveLearner:
                                    'pass include_log_probs=True to its from_simulator constructor')
         self._train_history = []
         self._test_history = []
-        if isinstance(acquisition_function, str):
+        if isinstance(acquisition_function, str) and acquisition_function != 'random':
             acquisition_function = acquisition_functions[acquisition_function]
         self.acquisition_function = acquisition_function
         self.ucb_kappa = ucb_kappa
@@ -110,46 +111,71 @@ class ActiveLearner:
         self.model_fit()
         training_info = _get_best_epoch_information(self.ratio_model.keras_model_)
         self._train_history.append(training_info)
-        logger.info(f'Finished fitting ratio model. Best epoch information: {training_info}')
+        logger.info('Finished fitting ratio model. Best epoch information: '
+                    + ', '.join([f'{name}={val:.2E}' for name, val in training_info.items()]))
 
         if self.test_dataset is not None:
             logger.info('Evaluating MSE on test dataset')
             mse = self.model_eval()
-            logger.info(f'Test MSE: {mse}')
+            logger.info(f'Test MSE: {mse:.2E}')
             self._test_history.append(dict(mse=mse))
         self.trialed_thetas.append(next_theta)
 
     def calculate_marginalised_acquisition(self):
         U_theta = []
         for theta in self.trialed_thetas:
-            x = self.dataset.x[self.dataset.theta_1s == theta]
-            probs = self.ratio_model.predict_proba(x, theta_1=theta)
-            assert probs.shape == (len(x), 2)
-            U_theta_x = self.acquisition_function(probs)
+            mask = self.dataset.theta_1s == theta
+            x = self.dataset.x[mask]
+            theta_1s = self.dataset.theta_1s[mask]
+            model_input = build_singly_parameterized_input(x=x, theta_1s=theta_1s)
+            scaler, clf = self.ratio_model.estimator
+            model_input = scaler.transform(model_input)
+            sampled_probs = clf.sample_predictive_distribution(model_input)
+            # probs = self.ratio_model.predict_proba(x, theta_1=theta)
+            # assert probs.shape == (len(x), 2)
+            U_theta_x = self.acquisition_function(sampled_probs)
             assert U_theta_x.shape == (len(x),)
             U_theta.append(U_theta_x.mean())
         return U_theta
 
     def choose_theta(self):
-        length_scale = np.array([linspace[-1] - linspace[0] for linspace in self.param_grid.linspaces])
-        kernel = WhiteKernel() + RBF(length_scale=length_scale)
-        self.gp = GaussianProcessRegressor(kernel=kernel, alpha=0, n_restarts_optimizer=5, normalize_y=True)
+        if self.acquisition_function == 'random':
+            next_theta = self.remaining_thetas[np.random.randint(0, len(self.remaining_thetas))]
+        else:
+            length_scale = np.array([linspace[-1] - linspace[0] for linspace in self.param_grid.linspaces])
+            rbf = RBF(length_scale=length_scale/10, length_scale_bounds='fixed')
+            # rbf = RBF()
+            white_kernel = WhiteKernel()
+            self.gp = GaussianProcessRegressor(kernel=1*rbf + white_kernel,
+                                               alpha=0,
+                                               n_restarts_optimizer=5,
+                                               normalize_y=True)
 
-        X_train = np.array(self.trialed_thetas)
-        y_train = np.array(self.calculate_marginalised_acquisition())
-        self.gp.fit(X_train, y_train)
+            X_train = np.array(self.trialed_thetas)
+            y_train = np.array(self.calculate_marginalised_acquisition())
+            self.gp.fit(X_train, y_train)
 
-        X_test = np.array(self.remaining_thetas)
-        mean, std = self.gp.predict(X_test, return_std=True)
-        ucb = mean + self.ucb_kappa * std
+            X_test = np.array(self.remaining_thetas)
+            mean, std = self.gp.predict(X_test, return_std=True)
+            ucb = mean + self.ucb_kappa * std
 
-        self.gp_history.append(dict(
-            gp=clone(self.gp),
-            X_train=X_train,
-            y_train=y_train,
-            X_test=X_test,
-            mean=mean,
-            std=std
-        ))
+            self.gp_history.append(dict(
+                gp=clone(self.gp),
+                X_train=X_train,
+                y_train=y_train,
+                X_test=X_test,
+                mean=mean,
+                std=std
+            ))
+            next_theta = self.remaining_thetas[np.argmax(ucb)]
 
-        return self.remaining_thetas[np.argmax(ucb)]
+        return next_theta
+
+
+def _gp_debug(X_train, X_test, y_train, mean, std):
+    plt.figure()
+    plt.plot(X_train, y_train, 'ro')
+    plt.plot(X_test, mean)
+    plt.plot(X_test, mean - std, 'g')
+    plt.plot(X_test, mean + std, 'g')
+    plt.show()
