@@ -134,7 +134,7 @@ class SinglyParameterizedRatioModel(RatioModel):
             nllr.append(nllr_pred_aggregate)
 
         nllr = np.concatenate(nllr)
-        mle = param_grid[np.argmax(nllr)]
+        mle = param_grid[np.argmin(nllr)]
         if meshgrid_shape:
             meshgrid = param_grid.meshgrid()
             nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
