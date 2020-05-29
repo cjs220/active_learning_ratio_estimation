@@ -20,7 +20,8 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
         ratio_models = dict(Model=ratio_models)
 
     n_data = n_data if n_data != -1 else len(dataset)
-    dataset_sample = dataset.shuffle()[:n_data]
+    dataset.shuffle()
+    dataset_sample = dataset[:n_data]
 
     probs = dict()
     for model_name, model in ratio_models.items():
