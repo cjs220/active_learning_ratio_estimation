@@ -32,7 +32,6 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
                      n_bins: int = 10,
                      strategy: str = 'uniform',
                      ):
-    f, axarr = plt.subplots(2)
 
     if isinstance(ratio_models, RatioModel):
         ratio_models = dict(Model=ratio_models)
@@ -51,6 +50,7 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
         logits[model_name] = _get_softmax_logits_from_binary_probs(y_prob)
 
     calibration_curves = dict()
+    ymax, ymin = (1, 0)  # plot boundaries
     for model_name, y_prob in probs.items():
         prob_true, prob_pred = calibration_curve(
             y_true=dataset_sample.y,
@@ -58,21 +58,25 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
             n_bins=n_bins,
             strategy=strategy
         )
+        ymax = min(prob_pred.max(), ymax)
+        ymin = max(prob_pred.min(), ymin)
         calibration_curves[model_name] = prob_true, prob_pred
-        axarr[0].plot(prob_true, prob_pred, 's-', label=model_name)
-    axarr[0].plot(np.linspace(0, 1, 1000), np.linspace(0, 1, 1000), 'k--', label='Perfectly Calibrated')
-    axarr[0].set_xlim(min(map(min, probs.values())), max(map(max, probs.values())))
-    axarr[0].set_xlabel('Prob True')
-    axarr[0].set_ylabel('Prob Pred')
-    axarr[0].set_title('Reliability Curve')
-    axarr[0].legend()
+        plt.plot(prob_true, prob_pred, 's-', label=model_name)
+    plt.plot(np.linspace(0, 1, 1000), np.linspace(0, 1, 1000), 'k--', label='Perfectly Calibrated')
+    plt.xlim(min(map(min, probs.values())), max(map(max, probs.values())))
+    plt.ylim(ymin, ymax)
+    plt.xlabel('Prob True')
+    plt.ylabel('Prob Pred')
+    plt.title('Reliability Curve')
+    plt.legend()
+    plt.tight_layout()
 
     brier_scores = dict()
-    f1_errors = dict()
+    f1_scores = dict()
     eces = dict()
     for model_name in probs.keys():
         brier_scores[model_name] = brier_score_loss(y_true=dataset_sample.y, y_prob=probs[model_name])
-        f1_errors[model_name] = 1 - f1_score(y_true=dataset_sample.y, y_pred=preds[model_name], average='binary')
+        f1_scores[model_name] = f1_score(y_true=dataset_sample.y, y_pred=preds[model_name], average='binary')
         eces[model_name] = tfp.stats.expected_calibration_error(
             num_bins=n_bins,
             logits=tf.cast(logits[model_name], tf.float32),
@@ -81,8 +85,8 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
 
     scores = {
         'Brier Score': brier_scores,
-        'F1 Error': f1_errors,
+        'F1 Score': f1_scores,
         'Expected Calibration Error': eces
     }
-    pd.DataFrame(scores).T.plot.bar(ax=axarr[1], rot=30)
+
     return calibration_curves, scores
