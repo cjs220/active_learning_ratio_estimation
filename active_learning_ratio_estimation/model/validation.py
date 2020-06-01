@@ -50,23 +50,23 @@ def plot_calibration(ratio_models: Union[Dict[str, RatioModel], RatioModel],
         logits[model_name] = _get_softmax_logits_from_binary_probs(y_prob)
 
     calibration_curves = dict()
-    ymax, ymin = (1, 0)  # plot boundaries
+    xmin, xmax = (0, 1)  # plot boundaries
     for model_name, y_prob in probs.items():
-        prob_true, prob_pred = calibration_curve(
+        accuracy, confidence = calibration_curve(
             y_true=dataset_sample.y,
             y_prob=y_prob,
             n_bins=n_bins,
             strategy=strategy
         )
-        ymax = min(prob_pred.max(), ymax)
-        ymin = max(prob_pred.min(), ymin)
-        calibration_curves[model_name] = prob_true, prob_pred
-        plt.plot(prob_true, prob_pred, 's-', label=model_name)
+        xmax = min(accuracy.max(), xmax)
+        xmin = max(accuracy.min(), xmin)
+        calibration_curves[model_name] = accuracy, confidence
+        plt.plot(confidence, accuracy, 's-', label=model_name)
     plt.plot(np.linspace(0, 1, 1000), np.linspace(0, 1, 1000), 'k--', label='Perfectly Calibrated')
-    plt.xlim(min(map(min, probs.values())), max(map(max, probs.values())))
-    plt.ylim(ymin, ymax)
-    plt.xlabel('Prob True')
-    plt.ylabel('Prob Pred')
+    plt.ylim(min(map(min, probs.values())), max(map(max, probs.values())))
+    plt.xlim(xmin - 0.1, xmax + 0.1)
+    plt.xlabel('Confidence')
+    plt.ylabel('Accuracy')
     plt.title('Reliability Curve')
     plt.legend()
     plt.tight_layout()
