@@ -130,7 +130,7 @@ class SinglyParameterizedRatioModel(RatioModel):
         _tqdm = tqdm.tqdm_notebook if notebook else tqdm.tqdm
         nllr = []
 
-        for theta in _tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid\n'):
+        for theta in _tqdm(param_grid):
             theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
             nllr_pred = self.predict_negative_log_likelihood_ratio(x, theta_1)
@@ -175,8 +175,7 @@ class SinglyParameterizedRatioModel(RatioModel):
             new_model.fit(new_ds)
             return new_model
 
-        msg = 'Calculating negative log-likelihood across parameter grid, calibrating at each point:\n'
-        for theta in _tqdm(param_grid, desc=msg):
+        for theta in _tqdm(param_grid):
             model = _calibrate_on_predict(theta)
             theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
