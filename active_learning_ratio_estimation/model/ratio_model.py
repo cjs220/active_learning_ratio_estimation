@@ -6,7 +6,7 @@ import tensorflow_probability as tfp
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from tqdm import tqdm
+import tqdm
 
 from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
     UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid, \
@@ -125,10 +125,12 @@ class SinglyParameterizedRatioModel(RatioModel):
                         x: np.ndarray,
                         param_grid: ParamGrid,
                         meshgrid_shape: bool = True,
+                        notebook: bool = False
                         ):
+        _tqdm = tqdm.notebook.tqdm if notebook else tqdm.tqdm
         nllr = []
 
-        for theta in tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid\n'):
+        for theta in _tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid\n'):
             theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
             nllr_pred = self.predict_negative_log_likelihood_ratio(x, theta_1)
@@ -150,8 +152,10 @@ class SinglyParameterizedRatioModel(RatioModel):
                                          simulator_func: Callable,
                                          calibration_method: str = 'sigmoid',
                                          meshgrid_shape: bool = True,
+                                         notebook: bool = False
                                          ):
         assert self.calibration_method is None
+        _tqdm = tqdm.notebook.tqdm if notebook else tqdm.tqdm
         # like nllr param scan, but with calibration at each parameter point
         nllr = []
 
@@ -172,7 +176,7 @@ class SinglyParameterizedRatioModel(RatioModel):
             return new_model
 
         msg = 'Calculating negative log-likelihood across parameter grid, calibrating at each point:\n'
-        for theta in tqdm(param_grid, desc=msg):
+        for theta in _tqdm(param_grid, desc=msg):
             model = _calibrate_on_predict(theta)
             theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
