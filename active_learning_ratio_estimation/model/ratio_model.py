@@ -127,7 +127,7 @@ class SinglyParameterizedRatioModel(RatioModel):
                         meshgrid_shape: bool = True,
                         notebook: bool = False
                         ):
-        _tqdm = tqdm.notebook.tqdm if notebook else tqdm.tqdm
+        _tqdm = tqdm.tqdm_notebook if notebook else tqdm.tqdm
         nllr = []
 
         for theta in _tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid\n'):
@@ -155,7 +155,7 @@ class SinglyParameterizedRatioModel(RatioModel):
                                          notebook: bool = False
                                          ):
         assert self.calibration_method is None
-        _tqdm = tqdm.notebook.tqdm if notebook else tqdm.tqdm
+        _tqdm = tqdm.tqdm_notebook if notebook else tqdm.tqdm
         # like nllr param scan, but with calibration at each parameter point
         nllr = []
 
