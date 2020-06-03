@@ -4,6 +4,7 @@ import tensorflow_probability as tfp
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
     UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid
@@ -18,7 +19,8 @@ class RatioModel:
                  estimator,
                  calibration_method=None,
                  cv=1,
-                 normalize_input=True):
+                 normalize_input=True
+                 ):
         self.calibration_method = calibration_method
         if calibration_method is not None:
             estimator = CalibratedClassifierCV(base_estimator=estimator,
@@ -116,27 +118,24 @@ class SinglyParameterizedRatioModel(RatioModel):
         assert np.all(self.theta_0_ == dataset.theta_0)
         return super().predict_proba_dataset(dataset)
 
-    def nllr_param_scan(self, x: np.ndarray, param_grid: ParamGrid, meshgrid_shape: bool = True):
-        total_data_points = len(x) * len(param_grid)
-        n_millions = int(np.ceil(total_data_points / 1e6))
-        # if the total number of data points is > 1e6, split them up so we don't have to keep all in memory
-        param_grid_splits = np.array_split(param_grid.values, n_millions)
+    def nllr_param_scan(self,
+                        x: np.ndarray,
+                        param_grid: ParamGrid,
+                        meshgrid_shape: bool = True,
+                        ):
         nllr = []
 
-        for param_grid_split in param_grid_splits:
-            theta_1 = np.concatenate([tile_reshape(theta, reps=len(x))
-                                      for theta in param_grid_split], axis=0)
-            x_ = concat_repeat(x, len(param_grid_split), axis=0)
+        for theta in tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid'):
+            theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
-            nllr_pred = self.predict_negative_log_likelihood_ratio(x_, theta_1)
-            # predict nllr over the whole dataset x for each theta
-            nllr_pred_aggregate = np.stack(np.split(nllr_pred, len(param_grid_split))).sum(axis=1)
+            nllr_pred = self.predict_negative_log_likelihood_ratio(x, theta_1)
+            # predict nllr over the whole dataset
+            nllr_pred_aggregate = nllr_pred.sum()
             nllr.append(nllr_pred_aggregate)
 
-        nllr = np.concatenate(nllr)
+        nllr = np.array(nllr)
         mle = param_grid[np.argmin(nllr)]
         if meshgrid_shape:
             meshgrid = param_grid.meshgrid()
-            # TODO: see if this line can be replaced by a simple reshaping
             nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
         return nllr, mle
