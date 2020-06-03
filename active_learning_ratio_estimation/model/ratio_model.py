@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 import tensorflow_probability as tfp
 
@@ -7,7 +9,8 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
 from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
-    UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid
+    UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid, \
+    SingleParamIterator
 from active_learning_ratio_estimation.util import tile_reshape, outer_prod_shape_to_meshgrid_shape, concat_repeat, \
     stack_repeat, estimated_likelihood_ratio
 
@@ -125,10 +128,55 @@ class SinglyParameterizedRatioModel(RatioModel):
                         ):
         nllr = []
 
-        for theta in tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid'):
+        for theta in tqdm(param_grid, desc='Calculating negative log-likelihood across parameter grid\n'):
             theta_1 = tile_reshape(theta, reps=len(x))
             # predict nllr for individual data points
             nllr_pred = self.predict_negative_log_likelihood_ratio(x, theta_1)
+            # predict nllr over the whole dataset
+            nllr_pred_aggregate = nllr_pred.sum()
+            nllr.append(nllr_pred_aggregate)
+
+        nllr = np.array(nllr)
+        mle = param_grid[np.argmin(nllr)]
+        if meshgrid_shape:
+            meshgrid = param_grid.meshgrid()
+            nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
+        return nllr, mle
+
+    def nllr_param_scan_with_calibration(self,
+                                         x: np.ndarray,
+                                         param_grid: ParamGrid,
+                                         n_samples_per_theta: int,
+                                         simulator_func: Callable,
+                                         calibration_method: str = 'sigmoid',
+                                         meshgrid_shape: bool = True,
+                                         ):
+        assert self.calibration_method is None
+        # like nllr param scan, but with calibration at each parameter point
+        nllr = []
+
+        def _calibrate_on_predict(theta):
+            new_model = self.__class__(
+                estimator=self.estimator,
+                calibration_method=calibration_method,
+                normalize_input=False,
+                cv='prefit'
+            )
+            new_ds = SinglyParameterizedRatioDataset.from_simulator(
+                simulator_func=simulator_func,
+                theta_0=self.theta_0_,
+                theta_1_iterator=SingleParamIterator(theta),
+                n_samples_per_theta=n_samples_per_theta
+            )
+            new_model.fit(new_ds)
+            return new_model
+
+        msg = 'Calculating negative log-likelihood across parameter grid, calibrating at each point:\n'
+        for theta in tqdm(param_grid, desc=msg):
+            model = _calibrate_on_predict(theta)
+            theta_1 = tile_reshape(theta, reps=len(x))
+            # predict nllr for individual data points
+            nllr_pred = model.predict_negative_log_likelihood_ratio(x, theta_1)
             # predict nllr over the whole dataset
             nllr_pred_aggregate = nllr_pred.sum()
             nllr.append(nllr_pred_aggregate)
