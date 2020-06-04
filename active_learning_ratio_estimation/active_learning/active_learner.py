@@ -41,6 +41,7 @@ class ActiveLearner:
                  ):
         self.theta_0 = theta_0
         self.n_samples_per_theta = n_samples_per_theta
+        logger.info('Initialised ActiveLeaner; simulating initial dataset.')
         self.dataset = SinglyParameterizedRatioDataset.from_simulator(
             simulator_func=simulator_func,
             theta_0=theta_0,
@@ -69,6 +70,7 @@ class ActiveLearner:
 
         self.validation_mode = validation_mode
         if validation_mode:
+            logger.info('ActiveLearner in validation mode; simulating full dataset.')
             self.full_dataset = SinglyParameterizedRatioDataset.from_simulator(
                 simulator_func=simulator_func,
                 theta_0=theta_0,
@@ -129,13 +131,13 @@ class ActiveLearner:
             acq_hist_item['Validation'].plot(ax=ax)
         except KeyError:
             pass
-        ax.legend()
         return ax
 
     def step(self):
+        logger.info('Choosing next theta to add to dataset.')
         next_theta_index = self.choose_next_theta_index()
         next_theta = self.all_thetas[next_theta_index]
-        logger.info(f'Adding theta = {next_theta} to labeled data.')
+        logger.info(f'Adding theta = {next_theta} to labeled data. Building new dataset.')
 
         new_ds = SinglyParameterizedRatioDataset.from_simulator(
             simulator_func=self.simulator_func,
@@ -143,6 +145,7 @@ class ActiveLearner:
             theta_1_iterator=SingleParamIterator(next_theta),
             n_samples_per_theta=self.n_samples_per_theta,
         )
+        logger.info('Adding new dataset to existing dataset')
         self.dataset += new_ds
         self.dataset.shuffle()
 
@@ -202,12 +205,15 @@ class ActiveLearner:
             next_theta_index = np.random.choice(np.arange(len(self.all_thetas)), p=choice_probs)
         else:
             self.gp = self._gp()
+            logger.info('Calculating marginalised acquisition function')
             U_theta_train = self.calculate_marginalised_acquisition(self.dataset)
+            logger.info('Fitting, and predicting with, GaussianProcessRegressor.')
             self.gp.fit(self.trialed_thetas, U_theta_train)
             U_theta_pred, std = self.gp.predict(self.all_thetas, return_std=True)
             ucb = U_theta_pred + self.ucb_kappa * std
             ucb[self._trialed_mask] = -np.inf  # don't choose same theta twice
             next_theta_index = np.argmax(ucb)
+            logger.info('Recording acquisition history.')
             self._record_acq_history(U_theta_pred, U_theta_train)
 
         return next_theta_index
