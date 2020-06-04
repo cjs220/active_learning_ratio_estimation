@@ -113,8 +113,8 @@ class UnparameterizedRatioDataset(RatioDataset):
                  ):
         self.theta_0 = theta_0
         self.theta_1 = theta_1
-        theta_0s = stack_repeat(theta_0, len(x))
-        theta_1s = stack_repeat(theta_1, len(x))
+        theta_0s = stack_repeat(theta_0, len(x)).astype(np.float32)
+        theta_1s = stack_repeat(theta_1, len(x)).astype(np.float32)
         super().__init__(x=x,
                          y=y,
                          theta_0s=theta_0s,
@@ -141,12 +141,12 @@ class UnparameterizedRatioDataset(RatioDataset):
         x1 = sim1.sample(n_samples_per_theta).numpy()
         y0 = np.zeros(len(x0))
         y1 = np.ones_like(y0)
-        x = np.concatenate([x0, x1], axis=0)
-        y = np.concatenate([y0, y1], axis=0)
+        x = np.concatenate([x0, x1], axis=0).astype(np.float32)
+        y = np.concatenate([y0, y1], axis=0).astype(np.float32)
 
         if include_log_probs:
-            log_prob_0 = sim0.log_prob(x)
-            log_prob_1 = sim1.log_prob(x)
+            log_prob_0 = sim0.log_prob(x).astype(np.float32)
+            log_prob_1 = sim1.log_prob(x).astype(np.float32)
         else:
             log_prob_0 = None
             log_prob_1 = None
@@ -181,7 +181,7 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                  shuffle: bool = True
                  ):
         self.theta_0 = theta_0
-        theta_0s = stack_repeat(theta_0, len(x))
+        theta_0s = stack_repeat(theta_0, len(x)).astype(np.float32)
         super().__init__(x=x,
                          y=y,
                          theta_0s=theta_0s,
@@ -236,16 +236,16 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             _simulate(theta_1, x0[start:stop, :])
 
         if include_log_probs:
-            log_prob_0 = np.concatenate(log_prob_0_x0 + log_prob_0_x1, axis=0)
-            log_prob_1 = np.concatenate(log_prob_1_x0 + log_prob_1_x1, axis=0)
+            log_prob_0 = np.concatenate(log_prob_0_x0 + log_prob_0_x1, axis=0).astype(np.float32)
+            log_prob_1 = np.concatenate(log_prob_1_x0 + log_prob_1_x1, axis=0).astype(np.float32)
         else:
             log_prob_0 = None
             log_prob_1 = None
 
         x1 = ensure_2d(np.concatenate(x1, axis=0))
-        x = np.concatenate([x0, x1], axis=0)
-        y = np.concatenate([y0, y1], axis=0)
-        theta_1s = concat_repeat(theta_1s, 2, axis=0)
+        x = np.concatenate([x0, x1], axis=0).astype(np.float32)
+        y = np.concatenate([y0, y1], axis=0).astype(np.float32)
+        theta_1s = concat_repeat(theta_1s, 2, axis=0).astype(np.float32)
         return cls(x=x,
                    y=y,
                    theta_0=theta_0,
