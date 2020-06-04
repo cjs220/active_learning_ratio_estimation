@@ -197,7 +197,9 @@ class ActiveLearner:
 
     def choose_next_theta_index(self):
         if self.acquisition_function == 'random':
-            next_theta_index = np.random.randint(0, len(self.remaining_thetas))
+            choice_weights = 1 - self._trialed_mask
+            choice_probs = choice_weights/choice_weights.sum()
+            next_theta_index = np.random.choice(np.arange(len(self.all_thetas)), p=choice_probs)
         else:
             self.gp = self._gp()
             U_theta_train = self.calculate_marginalised_acquisition(self.dataset)
