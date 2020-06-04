@@ -13,7 +13,7 @@ from active_learning_ratio_estimation.active_learning.acquisition_functions impo
 from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset, SingleParamIterator, \
     ParamIterator, build_singly_parameterized_input
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel
-from active_learning_ratio_estimation.util import ensure_array, ideal_classifier_probs
+from active_learning_ratio_estimation.util import ideal_classifier_probs
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class ActiveLearner:
                  ucb_kappa: float = 1.0,
                  mc_samples: float = 100,
                  validation_mode: bool = False,
-                 gp_kwargs: Dict = None
+                 gp_params: Dict = None
                  ):
         self.theta_0 = theta_0
         self.n_samples_per_theta = n_samples_per_theta
@@ -80,14 +80,20 @@ class ActiveLearner:
         else:
             self.full_dataset = None
 
+        self.gp_params = gp_params if gp_params is not None else self._default_gp_params()
         self.gp = None
-        self.gp_kwargs = gp_kwargs
         self.acquisition_history = []
 
-    def fit(self, n_iter: int):
+    def fit(self, n_iter: int, verbose: bool = True):
+
         for i in range(n_iter):
-            logger.info(f'Active learning iteration {i + 1}/{n_iter}')
-            self.step()
+            iter_msg = f'Active learning iteration {i + 1}/{n_iter}'
+            if verbose:
+                print(iter_msg)
+            logger.info(iter_msg)
+
+            self.step(verbose=verbose)
+
         return self
 
     def model_fit(self):
@@ -100,6 +106,15 @@ class ActiveLearner:
         ideal_probs = np.hstack([1 - ideal_probs, ideal_probs])
         squared_error = (probs - ideal_probs) ** 2
         return squared_error.mean()
+
+    @staticmethod
+    def _default_gp_params():
+        gp_params = dict(
+            kernel=RBF() + WhiteKernel(),
+            n_restarts_optimizer=5,
+            alpha=0,
+        )
+        return gp_params
 
     @property
     def all_thetas(self):
@@ -121,19 +136,37 @@ class ActiveLearner:
     def train_history(self):
         return pd.DataFrame(self._train_history)
 
-    def plot_acquisition_history_item(self, item=-1, ax=None):
-        acq_hist_item = self.acquisition_history[item]
-        if ax is None:
-            _, ax = plt.subplots()
-        acq_hist_item['Training'].plot(marker='o', color='r', ax=ax)
-        acq_hist_item['Prediction'].plot(color='b', ax=ax)
-        try:
-            acq_hist_item['Validation'].plot(ax=ax)
-        except KeyError:
-            pass
-        return ax
+    def plot_acquisition_history_item(self, item=-1, fig=None, ax=None):
+        if np.array(self.theta_0).size != 1:
+            raise ValueError('Can only plot results for 1D parameter spaces')
 
-    def step(self):
+        hist_item = self.acquisition_history[item]
+
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+
+        ax.plot(hist_item['theta_train'], hist_item['U_theta_train'], 'ro', ms=8, label=r'$U(\theta _\mathrm{train})$')
+
+        U_theta_pred = hist_item['U_theta_pred']
+        std = hist_item['std']
+        ax.plot(self.all_thetas, U_theta_pred, 'b', label=r'$U(\theta _\mathrm{pred})$')
+        ax.fill_between(
+            x=self.all_thetas.squeeze(),
+            y1=U_theta_pred + std,
+            y2=U_theta_pred - std,
+            alpha=0.5,
+            color='b',
+            label=r'$U(\theta _\mathrm{pred}) \pm \sigma$'
+        )
+
+        if self.validation_mode:
+            ax.plot(self.all_thetas.squeeze(), hist_item['U_theta_true'], label=r'$U(\theta _\mathrm{pred}')
+
+        ax.set_xlabel(r'$\theta$')
+
+        return fig, ax
+
+    def step(self, verbose=True):
         logger.info('Choosing next theta to add to dataset.')
         next_theta_index = self.choose_next_theta_index()
         next_theta = self.all_thetas[next_theta_index]
@@ -153,8 +186,11 @@ class ActiveLearner:
         self.model_fit()
         training_info = _get_best_epoch_information(self.ratio_model.keras_model_)
         self._train_history.append(training_info)
-        logger.info('Finished fitting ratio model. Best epoch information: '
-                    + ', '.join([f'{name}={val:.2E}' for name, val in training_info.items()]))
+        epoch_msg = 'Best epoch information: ' \
+                    + ', '.join([f'{name}={val:.2E}' for name, val in training_info.items()])
+        if verbose:
+            print(epoch_msg)
+        logger.info(epoch_msg)
 
         if self.test_dataset is not None:
             logger.info('Evaluating MSE on test dataset')
@@ -185,26 +221,13 @@ class ActiveLearner:
             U_theta.append(U_theta_x.mean())
         return np.array(U_theta)
 
-    def _gp(self):
-        if self.gp_kwargs is None:
-            length_scale = np.array([linspace[-1] - linspace[0] for linspace in self.param_grid.linspaces])
-            rbf = RBF(length_scale=length_scale / 10, length_scale_bounds='fixed')
-            white_kernel = WhiteKernel()
-            kwargs = dict(kernel=1 * rbf + white_kernel,
-                          alpha=0,
-                          n_restarts_optimizer=5,
-                          normalize_y=True)
-        else:
-            kwargs = self.gp_kwargs
-        return GaussianProcessRegressor(**kwargs)
-
     def choose_next_theta_index(self):
         if self.acquisition_function == 'random':
             choice_weights = 1 - self._trialed_mask
             choice_probs = choice_weights/choice_weights.sum()
             next_theta_index = np.random.choice(np.arange(len(self.all_thetas)), p=choice_probs)
         else:
-            self.gp = self._gp()
+            self.gp = GaussianProcessRegressor(**self.gp_params)
             logger.info('Calculating marginalised acquisition function')
             U_theta_train = self.calculate_marginalised_acquisition(self.dataset)
             logger.info('Fitting, and predicting with, GaussianProcessRegressor.')
@@ -214,38 +237,17 @@ class ActiveLearner:
             ucb[self._trialed_mask] = -np.inf  # don't choose same theta twice
             next_theta_index = np.argmax(ucb)
             logger.info('Recording acquisition history.')
-            self._record_acq_history(U_theta_pred, U_theta_train)
+            self._record_acquisition_history(U_theta_pred, std, U_theta_train)
 
         return next_theta_index
 
-    def _record_acq_history(self, U_theta_pred, U_theta_train):
-        # TODO: the following only works for 1D theta
-        training_info = pd.Series(
-            index=pd.Index(self.trialed_thetas.squeeze(), name='theta'),
-            data=U_theta_train,
-            name='U_theta_train'
+    def _record_acquisition_history(self, U_theta_pred, std, U_theta_train):
+        hist_item = dict(
+            theta_train=self.trialed_thetas,
+            U_theta_train=U_theta_train,
+            U_theta_pred=U_theta_pred,
+            std=std
         )
-        prediction_info = pd.Series(
-            index=pd.Index(self.all_thetas.squeeze(), name='theta'),
-            data=U_theta_pred,
-            name='U_theta_pred'
-        )
-        acquisition_hist_item = dict(Training=training_info, Prediction=prediction_info)
         if self.validation_mode:
-            U_theta_true = self.calculate_marginalised_acquisition(self.full_dataset)
-            validation_info = pd.Series(
-                index=pd.Index(self.all_thetas.squeeze(), name='theta'),
-                data=U_theta_true,
-                name='U_theta_true'
-            )
-            acquisition_hist_item['Validation'] = validation_info
-
-        self.acquisition_history.append(acquisition_hist_item)
-
-
-def _gp_debug(X_train, X_test, y_train, mean, std):
-    plt.figure()
-    plt.plot(X_train, y_train, 'ro')
-    plt.plot(X_test, mean)
-    plt.plot(X_test, mean - std, 'g')
-    plt.plot(X_test, mean + std, 'g')
+            hist_item['U_theta_true'] = self.calculate_marginalised_acquisition(self.full_dataset)
+        self.acquisition_history.append(hist_item)
