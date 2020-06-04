@@ -21,6 +21,10 @@ class ParamIterator:
     def __len__(self):
         return len(self.values)
 
+    @property
+    def array(self):
+        return np.array(self.values)
+
 
 class SingleParamIterator(ParamIterator):
 
