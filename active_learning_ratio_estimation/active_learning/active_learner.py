@@ -162,8 +162,6 @@ class ActiveLearner:
         if self.validation_mode:
             ax.plot(self.all_thetas.squeeze(), hist_item['U_theta_true'], label=r'$U(\theta _\mathrm{pred}')
 
-        ax.set_xlabel(r'$\theta$')
-
         return fig, ax
 
     def step(self, verbose=True):
