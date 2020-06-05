@@ -1,8 +1,9 @@
 import itertools
 from numbers import Number
-from typing import Union
+from typing import Union, List
 
 import numpy as np
+from pandas.core.generic import NDFrame
 
 
 def _get_likelihoods(x, simulator_func, theta_0, theta_1):
@@ -72,3 +73,12 @@ def build_simulator(simulator_func, theta):
     except TypeError:
         simulator = simulator_func(theta)
     return simulator
+
+
+def dataframe_sample_statistics(all_dfs: List[NDFrame]):
+    n = len(all_dfs)
+    mean = sum(all_dfs)/n
+    variance = sum([(df-mean)**2 for df in all_dfs])/(n-1)
+    std = variance**0.5
+    stderr = std/np.sqrt(n)
+    return mean, std, stderr
