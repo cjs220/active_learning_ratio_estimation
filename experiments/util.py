@@ -33,7 +33,7 @@ def matplotlib_setup(size=24, use_tex=True):
         'axes.titlepad': 12.5
     }
     if use_tex:
-        params['text.usetex'] = True,
+        params['text.usetex'] = True
     plt.rcParams.update(params)
 
 
@@ -77,7 +77,7 @@ def run_parallel_experiments(
         **experiment_func_kwargs
 ):
     return Parallel(n_jobs=n_jobs, verbose=verbose)(
-        delayed(experiment_func(**experiment_func_kwargs) for _ in range(n_experiments))
+        delayed(experiment_func)(**experiment_func_kwargs) for _ in range(n_experiments)
     )
 
 

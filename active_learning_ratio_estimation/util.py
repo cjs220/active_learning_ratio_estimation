@@ -76,6 +76,7 @@ def build_simulator(simulator_func, theta):
 
 
 def dataframe_sample_statistics(all_dfs: List[NDFrame]):
+    # TODO: maybe delete this + its unit test
     n = len(all_dfs)
     mean = sum(all_dfs)/n
     variance = sum([(df-mean)**2 for df in all_dfs])/(n-1)

@@ -1,10 +1,12 @@
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import tensorflow as tf
 import tensorflow_probability as tfp
+from matplotlib.figure import Figure
+from pandas.core.generic import NDFrame
 
 tfd = tfp.distributions
 from sklearn import clone
@@ -15,7 +17,7 @@ from active_learning_ratio_estimation.util import ideal_classifier_probs_from_si
 from active_learning_ratio_estimation.model import UnparameterizedRatioModel, DenseClassifier, FlipoutClassifier
 from active_learning_ratio_estimation.model.validation import get_calibration_metrics
 
-from experiments.util import set_all_random_seeds, matplotlib_setup
+from experiments.util import set_all_random_seeds, matplotlib_setup, run_parallel_experiments, save_results
 
 quantities = ('y_pred', 'nllr')
 
@@ -95,25 +97,25 @@ def fit_predict_models(
         verbose=False
 ):
     columns = pd.MultiIndex.from_product([quantities, models])
-    results = pd.DataFrame(columns=columns, index=x)
+    predictions = pd.DataFrame(columns=columns, index=x)
 
     for model_name, model in models.items():
         if verbose:
             print(f'\n******* Fitting {model_name} *******\n')
         model.fit(dataset)
-        results['y_pred', model_name] = model.predict_proba(x)[:, 1]
-        results['nllr', model_name] = model.predict_negative_log_likelihood_ratio(x)
+        predictions['y_pred', model_name] = model.predict_proba(x)[:, 1]
+        predictions['nllr', model_name] = model.predict_negative_log_likelihood_ratio(x)
 
     theta_0, theta_1 = dataset.theta_0, dataset.theta_1
-    results['y_pred', 'Ideal'] = ideal_classifier_probs_from_simulator(x, triple_mixture, theta_0, theta_1)
-    results['nllr', 'Ideal'] = negative_log_likelihood_ratio(x, triple_mixture, theta_0, theta_1)
+    predictions['y_pred', 'Ideal'] = ideal_classifier_probs_from_simulator(x, triple_mixture, theta_0, theta_1)
+    predictions['nllr', 'Ideal'] = negative_log_likelihood_ratio(x, triple_mixture, theta_0, theta_1)
 
-    return results
+    return predictions
 
 
-def calculate_mse(results):
+def calculate_mse(predictions):
     mses = pd.Series(dtype=float)
-    y_preds = results['y_pred']
+    y_preds = predictions['y_pred']
 
     for model_name in y_preds.columns:
         if model_name == 'Ideal':
@@ -151,11 +153,66 @@ def run_single_experiment(
     )
     models = create_models(**hyperparams)
     x = np.linspace(-5, 5, int(1e4))
-    results = fit_predict_models(models, x, ds)
+    predictions = fit_predict_models(models, x, ds)
+    mses = calculate_mse(predictions)
     calibration_curves, scores = get_calibration_info(models, ds, n_data)
-    return dict(results=results, scores=scores, calibration_curves=calibration_curves)
+    for model_name, mse in mses.iteritems():
+        scores['MSE', model_name] = mse
+    return dict(predictions=predictions, scores=scores, calibration_curves=calibration_curves)
 
 
-def run_experiments():
+# noinspection PyTypeChecker
+def _aggreate_experiment_results(results: List[Dict[str, NDFrame]]):
+    aggregated_predictions = pd.concat([res['predictions'] for res in results], axis=1, keys=range(len(results)))
+    aggregated_scores = pd.concat([res['scores'] for res in results], axis=1)
+    return dict(predictions=aggregated_predictions, scores=aggregated_scores)
+
+
+def plot_scores(aggregate_scores: pd.DataFrame) -> Figure:
+    means = aggregate_scores.mean(axis=1)
+    stds = aggregate_scores.std(axis=1, ddof=1)
+    n = aggregate_scores.shape[1]
+    stderrs = stds / np.sqrt(n)
+    fig, axarr = plt.subplots(2, 2, figsize=(15, 7), sharex=True)
+    for ax, score_name in zip(np.ravel(axarr), means.index.levels[0]):
+        means[score_name].plot.bar(
+            ax=ax,
+            yerr=stderrs[score_name],
+            alpha=0.5,
+            capsize=10,
+            rot=30,
+            title=score_name
+        )
+    return fig
+
+
+def run_experiments(n_experiments: int, **run_kwargs):
     set_all_random_seeds()
     matplotlib_setup()
+    results = run_parallel_experiments(run_single_experiment, n_experiments, **run_kwargs)
+    aggregated_results = _aggreate_experiment_results(results)
+    scores_plot = plot_scores(aggregated_results['scores'])
+    save_results(
+        experiment_name='mixtures',
+        figures=dict(scores=scores_plot),
+        frames=aggregated_results,
+        config={'n_experiments': n_experiments, **run_kwargs}
+    )
+
+
+if __name__ == '__main__':
+    n_experiments = 21
+    run_kwargs = dict(
+        n_samples_per_theta=int(1e5),
+        theta_0=0.25,
+        theta_1=0.05,
+        hyperparams=dict(
+            n_hidden=(10, 10),
+            epochs=20,
+            patience=2,
+            validation_split=0.1,
+            verbose=False
+        ),
+        n_data=int(1e4)
+    )
+    run_experiments(n_experiments, **run_kwargs)

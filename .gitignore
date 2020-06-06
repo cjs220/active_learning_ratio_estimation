@@ -1,5 +1,6 @@
 .idea/
 logs/
+results/
 __pycache__/
 .ipynb_checkpoints
 *.html

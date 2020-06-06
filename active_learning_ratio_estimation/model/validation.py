@@ -3,7 +3,7 @@ from typing import Dict, Union
 import numpy as np
 import pandas as pd
 from sklearn.calibration import calibration_curve
-from sklearn.metrics import brier_score_loss, accuracy_score, f1_score
+from sklearn.metrics import brier_score_loss, f1_score
 from scipy.special import logit
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -25,12 +25,13 @@ def _get_softmax_logits_from_binary_probs(probs: np.ndarray):
     return logits
 
 
-def get_calibration_metrics(ratio_models: Union[Dict[str, RatioModel], RatioModel],
-                            dataset: RatioDataset,
-                            n_data: int = -1,
-                            n_bins: int = 10,
-                            strategy: str = 'uniform',
-                            ):
+def get_calibration_metrics(
+        ratio_models: Union[Dict[str, RatioModel], RatioModel],
+        dataset: RatioDataset,
+        n_data: int = -1,
+        n_bins: int = 10,
+        strategy: str = 'uniform',
+):
     if isinstance(ratio_models, RatioModel):
         ratio_models = dict(Model=ratio_models)
 
@@ -39,7 +40,7 @@ def get_calibration_metrics(ratio_models: Union[Dict[str, RatioModel], RatioMode
     dataset.shuffle()
     dataset_sample = dataset[:n_data]
 
-    score_names = ('Brier Score', 'Accuracy', 'F1 (Micro)', 'Expected Calibration Error')
+    score_names = ('Brier Score', 'F1 (Micro)', 'Expected Calibration Error')
     scores = pd.Series(index=pd.MultiIndex.from_product([score_names, ratio_models]))
     calibration_curves = []
 
@@ -58,16 +59,12 @@ def get_calibration_metrics(ratio_models: Union[Dict[str, RatioModel], RatioMode
             y_true=dataset_sample.y,
             y_prob=y_prob
         )
-        scores['Accuracy'] = accuracy_score(
-            y_true=dataset_sample.y,
-            y_pred=y_pred
-        )
-        scores['F1 (Micro)'] = f1_score(
+        scores['F1 (Micro)', model_name] = f1_score(
             y_true=dataset_sample.y,
             y_pred=y_pred,
             average='micro'
         )
-        scores['Expected Calibration Error'] = tfp.stats.expected_calibration_error(
+        scores['Expected Calibration Error', model_name] = tfp.stats.expected_calibration_error(
             num_bins=n_bins,
             logits=tf.cast(_get_softmax_logits_from_binary_probs(y_prob), tf.float32),
             labels_true=tf.cast(dataset_sample.y, tf.int32)
