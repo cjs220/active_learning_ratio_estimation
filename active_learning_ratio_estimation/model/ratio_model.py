@@ -1,12 +1,13 @@
-from typing import Callable
+from typing import Callable, List
 
 import numpy as np
 import tensorflow_probability as tfp
+from joblib import Parallel, delayed
 
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-import tqdm
+from tqdm import tqdm
 
 from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
     UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid, \
@@ -121,28 +122,47 @@ class SinglyParameterizedRatioModel(RatioModel):
         assert np.all(self.theta_0_ == dataset.theta_0)
         return super().predict_proba_dataset(dataset)
 
-    def nllr_param_scan(self,
-                        x: np.ndarray,
-                        param_grid: ParamGrid,
-                        meshgrid_shape: bool = True,
-                        notebook: bool = False
-                        ):
-        _tqdm = tqdm.tqdm_notebook if notebook else tqdm.tqdm
-        nllr = []
+    def _param_scan(self,
+                    x: np.ndarray,
+                    param_grid: ParamGrid,
+                    meshgrid_shape: bool = True,
+                    get_model: Callable = None,
+                    verbose: bool = False
+                    ):
 
-        for theta in _tqdm(param_grid):
+        def _calc_nllr(theta):
             theta_1 = tile_reshape(theta, reps=len(x))
+            model = get_model(theta) if get_model is not None else self
             # predict nllr for individual data points
-            nllr_pred = self.predict_negative_log_likelihood_ratio(x, theta_1)
+            nllr_pred = model.predict_negative_log_likelihood_ratio(x, theta_1)
             # predict nllr over the whole dataset
-            nllr_pred_aggregate = nllr_pred.sum()
-            nllr.append(nllr_pred_aggregate)
+            return nllr_pred.sum()
+
+        nllr = []
+        iterator = tqdm(param_grid) if verbose else param_grid
+        for theta in iterator:
+            nllr.append(_calc_nllr(theta))
 
         nllr = np.array(nllr)
         mle = param_grid[np.argmin(nllr)]
         if meshgrid_shape:
             meshgrid = param_grid.meshgrid()
             nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
+        return nllr, mle
+
+    def nllr_param_scan(self,
+                        x: np.ndarray,
+                        param_grid: ParamGrid,
+                        meshgrid_shape: bool = True,
+                        verbose: bool = False
+                        ):
+        nllr, mle = self._param_scan(
+            get_model=None,
+            x=x,
+            param_grid=param_grid,
+            meshgrid_shape=meshgrid_shape,
+            verbose=verbose
+        )
         return nllr, mle
 
     def nllr_param_scan_with_calibration(self,
@@ -152,12 +172,10 @@ class SinglyParameterizedRatioModel(RatioModel):
                                          simulator_func: Callable,
                                          calibration_method: str = 'sigmoid',
                                          meshgrid_shape: bool = True,
-                                         notebook: bool = False
+                                         verbose: bool = False
                                          ):
-        assert self.calibration_method is None
-        _tqdm = tqdm.tqdm_notebook if notebook else tqdm.tqdm
         # like nllr param scan, but with calibration at each parameter point
-        nllr = []
+        assert self.calibration_method is None
 
         def _calibrate_on_predict(theta):
             new_model = self.__class__(
@@ -175,18 +193,12 @@ class SinglyParameterizedRatioModel(RatioModel):
             new_model.fit(new_ds)
             return new_model
 
-        for theta in _tqdm(param_grid):
-            model = _calibrate_on_predict(theta)
-            theta_1 = tile_reshape(theta, reps=len(x))
-            # predict nllr for individual data points
-            nllr_pred = model.predict_negative_log_likelihood_ratio(x, theta_1)
-            # predict nllr over the whole dataset
-            nllr_pred_aggregate = nllr_pred.sum()
-            nllr.append(nllr_pred_aggregate)
+        nllr, mle = self._param_scan(
+            get_model=_calibrate_on_predict,
+            x=x,
+            param_grid=param_grid,
+            meshgrid_shape=meshgrid_shape,
+            verbose=verbose
+        )
 
-        nllr = np.array(nllr)
-        mle = param_grid[np.argmin(nllr)]
-        if meshgrid_shape:
-            meshgrid = param_grid.meshgrid()
-            nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
         return nllr, mle

@@ -13,7 +13,6 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
     def __init__(self,
                  n_hidden: Sequence[int] = (10, 10),
                  activation: str = 'relu',
-                 loss: str = 'bce',
                  optimizer: str = 'adam',
                  run_eagerly: bool = False,
                  epochs: int = 10,
@@ -25,7 +24,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         self.activation = activation
 
         # compile arguments
-        self.loss = loss
+        self.loss = tf.keras.losses.BinaryCrossentropy()
         self.optimizer = optimizer
         self.run_eagerly = run_eagerly
 
