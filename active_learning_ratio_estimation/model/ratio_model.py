@@ -4,7 +4,6 @@ import numpy as np
 import tensorflow_probability as tfp
 from joblib import Parallel, delayed
 
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
@@ -14,6 +13,7 @@ from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParamet
     SingleParamIterator
 from active_learning_ratio_estimation.util import tile_reshape, outer_prod_shape_to_meshgrid_shape, concat_repeat, \
     stack_repeat, estimated_likelihood_ratio
+from carl.learning import CalibratedClassifierCV
 
 tfd = tfp.distributions
 
@@ -22,14 +22,14 @@ class RatioModel:
     def __init__(self,
                  estimator,
                  calibration_method=None,
-                 cv=1,
-                 normalize_input=True
+                 normalize_input=True,
+                 **calibration_kwargs
                  ):
         self.calibration_method = calibration_method
         if calibration_method is not None:
             estimator = CalibratedClassifierCV(base_estimator=estimator,
                                                method=self.calibration_method,
-                                               cv=cv)
+                                               **calibration_kwargs)
 
         steps = [('clf', estimator)]
         if normalize_input:
@@ -172,7 +172,8 @@ class SinglyParameterizedRatioModel(RatioModel):
                                          simulator_func: Callable,
                                          calibration_method: str = 'sigmoid',
                                          meshgrid_shape: bool = True,
-                                         verbose: bool = False
+                                         verbose: bool = False,
+                                         **calibration_kwargs
                                          ):
         # like nllr param scan, but with calibration at each parameter point
         assert self.calibration_method is None
@@ -182,7 +183,8 @@ class SinglyParameterizedRatioModel(RatioModel):
                 estimator=self.estimator,
                 calibration_method=calibration_method,
                 normalize_input=False,
-                cv='prefit'
+                cv='prefit',
+                **calibration_kwargs
             )
             new_ds = SinglyParameterizedRatioDataset.from_simulator(
                 simulator_func=simulator_func,

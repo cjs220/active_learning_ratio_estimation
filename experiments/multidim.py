@@ -115,7 +115,10 @@ def fit_predict_models(
                 param_grid=predict_grid,
                 simulator_func=MultiDimToyModel,
                 n_samples_per_theta=n_calibration_points_per_theta,
-                verbose=True
+                verbose=True,
+                calibration_method='histogram',
+                bins=50,
+                interpolation='quadratic'
             )
             predictions[f'{model_name} Calibrated'] = dict(Contours=calibrated_contours, MLE=calibrated_mle)
 
@@ -165,11 +168,15 @@ def plot_exclusion_contours(
         ax: Axes,
         contours: np.ndarray,
         mle: np.ndarray,
+        exact_mle: np.ndarray,
         predict_grid: ParamGrid
 ):
+    if not np.all(mle == exact_mle):
+        ax.plot(mle[0], mle[1], 'bo', ms=8, label='Predicted')
+    ax.plot(exact_mle[0], exact_mle[1], 'go', label='Exact', ms=8)
+    ax.plot(ALPHA_TRUE, BETA_TRUE, 'ro', ms=8, label='True')
+
     test_stat = 2 * (contours - contours.min())
-    ax.plot(mle[0], mle[1], 'bo', ms=8, label='MLE')
-    ax.plot(ALPHA_TRUE, BETA_TRUE, 'ro', label='True')
     im = ax.contourf(*predict_grid.meshgrid(), test_stat, levels=np.arange(0, 140, step=20))
     ax.contour(
         *predict_grid.meshgrid(),
@@ -189,7 +196,13 @@ def plot_predictions(
 ):
     fig, axarr = plt.subplots(2, 2, figsize=(10, 10), sharex=True, sharey=True)
     for ax, (model_name, pred) in zip(np.ravel(axarr), predictions.items()):
-        im = plot_exclusion_contours(ax=ax, contours=pred['Contours'], mle=pred['MLE'], predict_grid=predict_grid)
+        im = plot_exclusion_contours(
+            ax=ax,
+            contours=pred['Contours'],
+            mle=pred['MLE'],
+            exact_mle=predictions['Exact']['MLE'],
+            predict_grid=predict_grid,
+        )
         ax.set_title(model_name)
         fig.colorbar(im, ax=ax)
     return fig
@@ -234,8 +247,8 @@ if __name__ == '__main__':
             validation_split=0.1,
             n_hidden=(30, 30),
         ),
-        n_calibration_points_per_theta=int(1e5),
-        n_theta_pred=15
+        n_calibration_points_per_theta=int(1e4),
+        n_theta_pred=15,
     )
     predictions, pred_plot = run_single_experiment(**run_kwargs)
     save_results(

@@ -30,10 +30,9 @@ def matplotlib_setup(size=24, use_tex=True):
         'xtick.labelsize': size * 0.75,
         'ytick.labelsize': size * 0.75,
         'font.family': 'sans-serif',
-        'axes.titlepad': 12.5
+        'axes.titlepad': 12.5,
+        'text.usetex': use_tex
     }
-    if use_tex:
-        params['text.usetex'] = True
     plt.rcParams.update(params)
 
 

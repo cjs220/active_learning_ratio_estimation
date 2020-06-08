@@ -75,9 +75,11 @@ def create_models(**hyperparams):
     cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
     regular_calibrated = UnparameterizedRatioModel(
         estimator=clone(regular_estimator),
-        calibration_method='sigmoid',
+        calibration_method='histogram',
         normalize_input=False,
-        cv=cv
+        cv=cv,
+        bins=15,
+        interpolation='quadratic'
     )
 
     models = {
@@ -206,7 +208,7 @@ def run_experiments(n_experiments: int, **run_kwargs):
 
 
 if __name__ == '__main__':
-    n_experiments = 28
+    n_experiments = 4
     run_kwargs = dict(
         n_samples_per_theta=int(1e5),
         theta_0=0.05,

@@ -39,6 +39,8 @@ class ActiveLearner:
                  validation_mode: bool = False,
                  gp_params: Dict = None
                  ):
+        self._train_history = []
+        self._test_history = []
         self.theta_0 = theta_0
         self.n_samples_per_theta = n_samples_per_theta
         logger.info('Initialised ActiveLeaner; simulating initial dataset.')
@@ -56,11 +58,10 @@ class ActiveLearner:
         self.simulator_func = simulator_func
         self.test_dataset = test_dataset
         if test_dataset is not None:
+            self.model_eval()
             if test_dataset.log_prob_0 is None or test_dataset.log_prob_1 is None:
                 raise RuntimeError('Test dataset must have log probabilities of data points; '
                                    'pass include_log_probs=True to its from_simulator constructor.')
-        self._train_history = []
-        self._test_history = []
         if isinstance(acquisition_function, str) and acquisition_function != 'random':
             acquisition_function = acquisition_functions[acquisition_function]
         self.acquisition_function = acquisition_function
@@ -98,6 +99,8 @@ class ActiveLearner:
 
     def model_fit(self):
         self.ratio_model.fit(self.dataset)
+        training_info = _get_best_epoch_information(self.ratio_model.keras_model_)
+        self._train_history.append(training_info)
 
     def model_eval(self):
         probs = self.ratio_model.predict_proba_dataset(self.test_dataset)
@@ -105,7 +108,9 @@ class ActiveLearner:
         ideal_probs = ideal_classifier_probs(l0, l1)
         ideal_probs = np.hstack([1 - ideal_probs, ideal_probs])
         squared_error = (probs - ideal_probs) ** 2
-        return squared_error.mean()
+        mse = squared_error.mean()
+        self._test_history.append(dict(mse=mse))
+        return mse
 
     @staticmethod
     def _default_gp_params():
@@ -182,10 +187,8 @@ class ActiveLearner:
 
         logger.info('Fitting ratio model')
         self.model_fit()
-        training_info = _get_best_epoch_information(self.ratio_model.keras_model_)
-        self._train_history.append(training_info)
         epoch_msg = 'Best epoch information: ' \
-                    + ', '.join([f'{name}={val:.2E}' for name, val in training_info.items()])
+                    + ', '.join([f'{name}={val:.2E}' for name, val in self._train_history[-1].items()])
         if verbose:
             print(epoch_msg)
         logger.info(epoch_msg)
@@ -194,7 +197,6 @@ class ActiveLearner:
             logger.info('Evaluating MSE on test dataset')
             mse = self.model_eval()
             logger.info(f'Test MSE: {mse:.2E}')
-            self._test_history.append(dict(mse=mse))
 
         assert self._trialed_mask[next_theta_index] == 0
         self._trialed_mask[next_theta_index] = 1

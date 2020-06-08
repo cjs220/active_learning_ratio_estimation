@@ -7,6 +7,7 @@ from sklearn.metrics import brier_score_loss, f1_score
 from scipy.special import logit
 import tensorflow as tf
 import tensorflow_probability as tfp
+from sklearn.preprocessing import minmax_scale
 
 from active_learning_ratio_estimation.dataset import RatioDataset
 from active_learning_ratio_estimation.model import RatioModel
@@ -19,8 +20,8 @@ def _get_softmax_logits_from_binary_probs(probs: np.ndarray):
     logits = np.stack([np.zeros_like(logits), logits]).T
 
     # TODO: move to a test file
-    reconstructed_probs = tf.keras.backend.softmax(logits, axis=1)[:, 1]
-    np.testing.assert_array_almost_equal(probs, reconstructed_probs)
+    # reconstructed_probs = tf.keras.backend.softmax(logits, axis=1)[:, 1]
+    # np.testing.assert_array_almost_equal(probs, reconstructed_probs)
 
     return logits
 
@@ -46,6 +47,8 @@ def get_calibration_metrics(
 
     for model_name, model in ratio_models.items():
         y_prob = model.predict_proba_dataset(dataset_sample)[:, 1]
+        if y_prob.max() >= 1.0:
+            y_prob = minmax_scale(y_prob)
         y_pred = np.around(y_prob)
         accuracy, confidence = calibration_curve(
             y_true=dataset_sample.y,
