@@ -116,9 +116,6 @@ def fit_predict_models(
                 simulator_func=MultiDimToyModel,
                 n_samples_per_theta=n_calibration_points_per_theta,
                 verbose=True,
-                calibration_method='histogram',
-                bins=50,
-                interpolation='quadratic'
             )
             predictions[f'{model_name} Calibrated'] = dict(Contours=calibrated_contours, MLE=calibrated_mle)
 
@@ -245,7 +242,7 @@ if __name__ == '__main__':
             epochs=20,
             patience=5,
             validation_split=0.1,
-            n_hidden=(30, 30),
+            n_hidden=(40, 40),
         ),
         n_calibration_points_per_theta=int(1e4),
         n_theta_pred=15,

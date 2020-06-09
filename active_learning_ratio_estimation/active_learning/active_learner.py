@@ -53,8 +53,9 @@ class ActiveLearner:
         self.ratio_model = ratio_model
         self.model_fit()
         self.param_grid = total_param_grid
-        self._trialed_mask = np.array([np.array(total_param_grid.values) == theta
-                                       for theta in theta_1_iterator]).all(axis=2).sum(axis=0).astype(bool)
+        trialed_mask = np.array([np.array(total_param_grid.values) == theta
+                                 for theta in theta_1_iterator]).all(axis=2).sum(axis=0).astype(bool)
+        self._trialed_idx = np.arange(len(total_param_grid))[trialed_mask].tolist()
         self.simulator_func = simulator_func
         self.test_dataset = test_dataset
         if test_dataset is not None:
@@ -66,7 +67,6 @@ class ActiveLearner:
             acquisition_function = acquisition_functions[acquisition_function]
         self.acquisition_function = acquisition_function
         self.ucb_kappa = ucb_kappa
-
         self.mc_samples = mc_samples
 
         self.validation_mode = validation_mode
@@ -126,12 +126,16 @@ class ActiveLearner:
         return self.param_grid.array
 
     @property
-    def trialed_thetas(self):
-        return self.param_grid.array[self._trialed_mask]
+    def _untrialed_idx(self):
+        return np.delete(np.arange(len(self.all_thetas)), self._trialed_idx, axis=0).tolist()
 
     @property
-    def remaining_thetas(self):
-        return self.param_grid.array[~self._trialed_mask]
+    def trialed_thetas(self):
+        return self.param_grid.array[self._trialed_idx]
+
+    @property
+    def untrialed_thetas(self):
+        return self.param_grid.array[self._untrialed_idx]
 
     @property
     def test_history(self):
@@ -188,7 +192,7 @@ class ActiveLearner:
         logger.info('Fitting ratio model')
         self.model_fit()
         epoch_msg = 'Best epoch information: ' \
-                    + ', '.join([f'{name}={val:.2E}' for name, val in self._train_history[-1].items()])
+                    + ', '.join([f'{name}={val:.3f}' for name, val in self._train_history[-1].items()])
         if verbose:
             print(epoch_msg)
         logger.info(epoch_msg)
@@ -196,10 +200,13 @@ class ActiveLearner:
         if self.test_dataset is not None:
             logger.info('Evaluating MSE on test dataset')
             mse = self.model_eval()
-            logger.info(f'Test MSE: {mse:.2E}')
+            mse_msg = f'Test MSE= {mse:.2E}'
+            if verbose:
+                print(mse_msg)
+            logger.info(mse_msg)
 
-        assert self._trialed_mask[next_theta_index] == 0
-        self._trialed_mask[next_theta_index] = 1
+        assert next_theta_index not in self._trialed_idx
+        self._trialed_idx.append(next_theta_index)
 
     def calculate_marginalised_acquisition(self, dataset: SinglyParameterizedRatioDataset):
         U_theta = []
@@ -223,9 +230,7 @@ class ActiveLearner:
 
     def choose_next_theta_index(self):
         if self.acquisition_function == 'random':
-            choice_weights = 1 - self._trialed_mask
-            choice_probs = choice_weights/choice_weights.sum()
-            next_theta_index = np.random.choice(np.arange(len(self.all_thetas)), p=choice_probs)
+            next_theta_index = np.random.choice(self._untrialed_idx)
         else:
             self.gp = GaussianProcessRegressor(**self.gp_params)
             logger.info('Calculating marginalised acquisition function')
@@ -234,7 +239,7 @@ class ActiveLearner:
             self.gp.fit(self.trialed_thetas, U_theta_train)
             U_theta_pred, std = self.gp.predict(self.all_thetas, return_std=True)
             ucb = U_theta_pred + self.ucb_kappa * std
-            ucb[self._trialed_mask] = -np.inf  # don't choose same theta twice
+            ucb[self._trialed_idx] = -np.inf  # don't choose same theta twice
             next_theta_index = np.argmax(ucb)
             logger.info('Recording acquisition history.')
             self._record_acquisition_history(U_theta_pred, std, U_theta_train)

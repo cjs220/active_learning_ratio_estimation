@@ -1,6 +1,7 @@
 from typing import List, Iterable, Dict, Callable
 import os
 import random
+import pprint
 
 import numpy as np
 import pandas as pd
@@ -46,7 +47,6 @@ def save_results(
     root_folder = root_folder or 'results'
     figures = figures or {}
     frames = frames or {}
-    config = config or {}
 
     # make directory
     time_str = pd.Timestamp.now().strftime('%Y-%m-%d_%H%M')
@@ -63,9 +63,10 @@ def save_results(
         frame_path = os.path.join(dir_path, frame_name)
         frame.to_csv(frame_path + '.csv')
 
-    config_path = os.path.join(dir_path, 'config.txt')
-    with open(config_path, 'w+') as outfile:
-        outfile.write(str(config))
+    if config:
+        config_path = os.path.join(dir_path, 'config.txt')
+        with open(config_path, 'w+') as outfile:
+            outfile.write(pprint.pformat(config))
 
 
 def run_parallel_experiments(
