@@ -27,6 +27,10 @@ def estimated_likelihood_ratio(probs):
     return probs / (1 - probs)
 
 
+def estimated_log_likelihood_ratio(probs):
+    return np.log(probs) - np.log(1-probs)
+
+
 def likelihood_ratio(x, simulator_func, theta_0, theta_1):
     l0, l1 = _get_likelihoods(x=x, simulator_func=simulator_func, theta_0=theta_0, theta_1=theta_1)
     return l1/l0

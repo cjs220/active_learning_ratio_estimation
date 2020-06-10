@@ -4,6 +4,7 @@ from typing import Sequence
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
 
 from active_learning_ratio_estimation.model.keras_models import RegularDense, FlipoutDense
 
@@ -12,15 +13,19 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
 
     def __init__(self,
                  n_hidden: Sequence[int] = (10, 10),
+                 scale_input: bool = True,
                  activation: str = 'relu',
                  optimizer: str = 'adam',
                  run_eagerly: bool = False,
                  epochs: int = 10,
+                 batch_size: int = 32,
                  validation_split: float = 0.2,
+                 validation_batch_size: int = 32,
                  patience: int = 2,
                  verbose: int = 2,
                  ):
         self.n_hidden = n_hidden
+        self.scale_input = scale_input
         self.activation = activation
 
         # compile arguments
@@ -30,7 +35,9 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
 
         # fit arguments
         self.epochs = epochs
+        self.batch_size = batch_size
         self.validation_split = validation_split
+        self.validation_batch_size = validation_batch_size
         self.patience = patience
         self.verbose = verbose
 
@@ -38,29 +45,44 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         raise NotImplementedError
 
     def fit(self, X, y):
-        self.n_samples_ = int((1-self.validation_split)*len(X))
+        if self.scale_input:
+            self.scaler_ = StandardScaler()
+            X = self.scaler_.fit_transform(X)
+
+        self.n_samples_ = int((1 - self.validation_split) * len(X))
         self.classes_ = np.unique(y)
         self.n_classes_ = len(self.classes_)
         assert self.n_classes_ == 2
+
         model = self.get_keras_model()
         metrics = ['accuracy']
         model.compile(loss=self.loss, optimizer=self.optimizer, run_eagerly=self.run_eagerly, metrics=metrics)
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=self.patience, restore_best_weights=True)]
-        model.fit(X, y,
-                  epochs=self.epochs,
-                  callbacks=callbacks,
-                  verbose=self.verbose,
-                  validation_split=self.validation_split)
+        model.fit(
+            X, y,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            callbacks=callbacks,
+            verbose=self.verbose,
+            validation_split=self.validation_split,
+            validation_batch_size=self.validation_batch_size
+        )
         self.model_ = model
         return self
 
-    def predict_proba(self, X, **kwargs):
-        probs = self.model_.predict(X, **kwargs)
+    def predict_proba(self, X, batch_size=-1, **predict_params):
+        if self.scale_input:
+            X = self.scaler_.transform(X)
+
+        if batch_size == -1:
+            batch_size = len(X)
+
+        probs = self.model_.predict(X, **predict_params)
         probs = np.hstack([1 - probs, probs])
         return probs
 
-    def predict(self, X, **kwargs):
-        return np.around(self.predict_proba(X, **kwargs)[:, 1])
+    def predict(self, X, batch_size=-1, **kwargs):
+        return np.around(self.predict_proba(X, batch_size=-batch_size, **kwargs)[:, 1])
 
     def score(self, X, y, sample_weight=None):
         # TODO
@@ -69,13 +91,13 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
 
 class BaseBayesianWrapper(BaseWrapper, ABC):
 
-    def sample_predictive_distribution(self, X, samples=100, **kwargs):
+    def sample_predictive_distribution(self, X, samples=100, **predict_params):
         X_tile = np.repeat(X, samples, axis=0)
-        probs = super().predict_proba(X_tile, **kwargs).reshape(len(X), samples, 2)
+        probs = super().predict_proba(X_tile, **predict_params).reshape(len(X), samples, 2)
         return probs
 
-    def predict_proba(self, X, samples=100, **kwargs):
-        probs = self.sample_predictive_distribution(X, samples=samples, **kwargs)
+    def predict_proba(self, X, samples=100, **predict_params):
+        probs = self.sample_predictive_distribution(X, samples=samples, **predict_params)
         mean_probs = probs.mean(axis=1)
         return mean_probs
 

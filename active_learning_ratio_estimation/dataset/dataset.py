@@ -76,6 +76,9 @@ class RatioDataset:
     def build_input(self):
         raise NotImplementedError
 
+    def get_Xy(self):
+        return self.build_input(), y
+
     def __len__(self):
         return len(self.x)
 
