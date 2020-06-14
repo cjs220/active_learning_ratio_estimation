@@ -1,0 +1,9 @@
+tensorflow
+tensorflow-probability
+numpy
+pandas
+scikit-learn
+matplotlib
+astropy
+theano
+tqdm

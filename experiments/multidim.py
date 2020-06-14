@@ -8,6 +8,8 @@ from scipy.stats import chi2
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+from active_learning_ratio_estimation.model.ratio_model import param_scan, calibrated_param_scan
+
 tfd = tfp.distributions
 from sklearn.datasets import make_sparse_spd_matrix
 
@@ -73,14 +75,14 @@ def create_dataset(
     return ds
 
 
-def create_models(**hyperparams):
+def create_models(theta_0, **hyperparams):
     # regular model
     regular_estimator = DenseClassifier(activation='tanh', **hyperparams)
-    regular_model = SinglyParameterizedRatioModel(estimator=regular_estimator, calibration_method=None)
+    regular_model = SinglyParameterizedRatioModel(theta_0=theta_0, clf=regular_estimator)
 
     # bayesian model
     bayesian_estimator = FlipoutClassifier(activation='relu', **hyperparams)
-    bayesian_model = SinglyParameterizedRatioModel(estimator=bayesian_estimator, calibration_method=None)
+    bayesian_model = SinglyParameterizedRatioModel(theta_0=theta_0, clf=bayesian_estimator)
 
     return dict(Regular=regular_model, Bayesian=bayesian_model)
 
@@ -96,26 +98,34 @@ def fit_predict_models(
         dataset: SinglyParameterizedRatioDataset,
         X_true: np.ndarray,
         predict_grid: ParamGrid,
-        n_calibration_points_per_theta: int
+        n_calibration_points_per_theta: int,
+        theta_batch_size: int,
+        calibration_params: Dict,
+        verbose: bool
 ):
     predictions = dict()
     for model_name, model in models.items():
-        model.fit(dataset)
-        contours, mle = model.nllr_param_scan(
-            x=X_true,
+        model.fit(X=dataset.x, theta_1s=dataset.theta_1s, y=dataset.y)
+        contours, mle = param_scan(
+            model=model,
+            X_true=X_true,
             param_grid=predict_grid,
-            verbose=True
+            theta_batch_size=theta_batch_size,
+            verbose=verbose
         )
 
         predictions[model_name] = dict(Contours=contours, MLE=mle)
 
         if model_name == 'Regular':
-            calibrated_contours, calibrated_mle = model.nllr_param_scan_with_calibration(
-                x=X_true,
+
+            calibrated_contours, calibrated_mle = calibrated_param_scan(
+                model=model,
+                X_true=X_true,
                 param_grid=predict_grid,
                 simulator_func=MultiDimToyModel,
                 n_samples_per_theta=n_calibration_points_per_theta,
-                verbose=True,
+                verbose=verbose,
+                calibration_params=calibration_params
             )
             predictions[f'{model_name} Calibrated'] = dict(Contours=calibrated_contours, MLE=calibrated_mle)
 
@@ -211,18 +221,24 @@ def run_single_experiment(
         n_theta_train: int,
         hyperparams: Dict,
         n_calibration_points_per_theta,
-        n_theta_pred: int
+        n_theta_pred: int,
+        theta_batch_size: int,
+        calibration_params: Dict,
+        verbose: bool
 ):
     X_true = get_X_true()
     ds = create_dataset(theta_0=theta_0, n_samples_per_theta=n_samples_per_theta, n_theta_train=n_theta_train)
-    models = create_models(**hyperparams)
+    models = create_models(theta_0=theta_0, **hyperparams)
     predict_grid = get_predict_grid(n_theta_pred=n_theta_pred)
     predictions = fit_predict_models(
         models=models,
         dataset=ds,
         X_true=X_true,
         predict_grid=predict_grid,
-        n_calibration_points_per_theta=n_calibration_points_per_theta
+        n_calibration_points_per_theta=n_calibration_points_per_theta,
+        theta_batch_size=theta_batch_size,
+        calibration_params=calibration_params,
+        verbose=verbose
     )
     exact_contours = get_exact_contours(theta_0=theta_0, X_true=X_true, predict_grid=predict_grid)
     exact_mle = get_exact_mle(X_true)
@@ -233,7 +249,7 @@ def run_single_experiment(
 
 if __name__ == '__main__':
     set_all_random_seeds()
-    matplotlib_setup()
+    matplotlib_setup(use_tex=False)
     run_kwargs = dict(
         n_samples_per_theta=500,
         theta_0=np.array([0, 0]),
@@ -243,9 +259,17 @@ if __name__ == '__main__':
             patience=5,
             validation_split=0.1,
             n_hidden=(40, 40),
+            verbose=2
         ),
         n_calibration_points_per_theta=int(1e4),
         n_theta_pred=15,
+        theta_batch_size=10,
+        calibration_params=dict(
+            method='histogram',
+            bins=50,
+            interpolation='slinear'
+        ),
+        verbose=True
     )
     predictions, pred_plot = run_single_experiment(**run_kwargs)
     save_results(

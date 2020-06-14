@@ -22,7 +22,7 @@ def set_all_random_seeds(seed=0):
     random.seed(0)
 
 
-def matplotlib_setup(size=24, use_tex=True):
+def matplotlib_setup(size=24, use_tex=False):
     params = {
         'legend.fontsize': size * 0.75,
         'figure.figsize': (10, 5),
@@ -81,14 +81,15 @@ def run_parallel_experiments(
     )
 
 
-if __name__ == '__main__':
-    frames = {f'frame_{i + 1}': pd.DataFrame(np.random.rand(10, 3), columns=list('abc')) for i in range(5)}
-    figures = dict()
-
-    for i in range(3):
-        fig, ax = plt.subplots()
-        ax.plot(np.linspace(0, 1, 101), np.linspace(0, 1, 101) ** (i + 1))
-        figures[f'figure_{i + 1}'] = fig
-
-    config = dict(x=5, y=0, z=6)
-    save_results('test', figures=figures, frames=frames, config=config)
+def plot_line_graph_with_errors(mean: pd.DataFrame, stderr: pd.DataFrame, ax=None, alpha=0.3, **kwargs):
+    ax = mean.plot(ax=ax)
+    ax.set_prop_cycle(None)
+    for col in stderr.columns:
+        ax.fill_between(
+            mean.index.values,
+            mean[col].values - stderr[col].values,
+            mean[col].values + stderr[col].values,
+            alpha=alpha,
+            **kwargs
+        )
+    return ax

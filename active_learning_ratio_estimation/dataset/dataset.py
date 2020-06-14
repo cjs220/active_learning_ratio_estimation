@@ -57,6 +57,9 @@ class RatioDataset:
         if shuffle:
             self.shuffle()
 
+    def __len__(self):
+        return len(self.x)
+
     def shuffle(self):
         p = np.random.permutation(len(self.x))
         self.x = self.x[p]
@@ -75,12 +78,6 @@ class RatioDataset:
 
     def build_input(self):
         raise NotImplementedError
-
-    def get_Xy(self):
-        return self.build_input(), y
-
-    def __len__(self):
-        return len(self.x)
 
     def _get_item_arrays(self, item):
         def _get_item_get_attr(attr_name):
@@ -126,6 +123,12 @@ class UnparameterizedRatioDataset(RatioDataset):
                          log_prob_1=log_prob_1,
                          shuffle=shuffle)
 
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        arrays.pop('theta_1s')
+        return self.__class__(**arrays, theta_0=self.theta_0, theta_1=self.theta_1, shuffle=False)
+
     @classmethod
     def from_simulator(cls,
                        simulator_func: Callable,
@@ -165,12 +168,6 @@ class UnparameterizedRatioDataset(RatioDataset):
     def build_input(self):
         return build_unparameterized_input(self.x)
 
-    def __getitem__(self, item):
-        arrays = self._get_item_arrays(item)
-        arrays.pop('theta_0s')
-        arrays.pop('theta_1s')
-        return self.__class__(**arrays, theta_0=self.theta_0, theta_1=self.theta_1, shuffle=False)
-
 
 class SinglyParameterizedRatioDataset(RatioDataset):
 
@@ -192,6 +189,17 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                          log_prob_0=log_prob_0,
                          log_prob_1=log_prob_1,
                          shuffle=shuffle)
+
+    def __add__(self, other):
+        assert self.theta_0 == other.theta_0
+        concated_data = self._concat_data(other)
+        concated_data.pop('theta_0s')
+        return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)
+
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        return self.__class__(**arrays, theta_0=self.theta_0, shuffle=False)
 
     @classmethod
     def from_simulator(cls,
@@ -259,14 +267,3 @@ class SinglyParameterizedRatioDataset(RatioDataset):
 
     def build_input(self):
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
-
-    def __add__(self, other):
-        assert self.theta_0 == other.theta_0
-        concated_data = self._concat_data(other)
-        concated_data.pop('theta_0s')
-        return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)
-
-    def __getitem__(self, item):
-        arrays = self._get_item_arrays(item)
-        arrays.pop('theta_0s')
-        return self.__class__(**arrays, theta_0=self.theta_0, shuffle=False)

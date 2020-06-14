@@ -3,10 +3,12 @@ from typing import Dict, List
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import tensorflow as tf
 import tensorflow_probability as tfp
+import tensorflow as tf
 from matplotlib.figure import Figure
 from pandas.core.generic import NDFrame
+
+from carl.learning import CalibratedClassifierCV
 
 tfd = tfp.distributions
 from sklearn import clone
@@ -23,6 +25,7 @@ quantities = ('y_pred', 'nllr')
 
 
 def triple_mixture(gamma):
+    gamma = tf.cast(gamma, tf.float32)
     mixture_probs = [
         0.5 * (1 - gamma),
         0.5 * (1 - gamma),
@@ -54,33 +57,18 @@ def create_dataset(
     return ds
 
 
-def create_models(**hyperparams):
+def create_models(theta_0, theta_1, hyperparams, calibration_params):
     # regular, uncalibrated model
     regular_estimator = DenseClassifier(activation='tanh', **hyperparams)
-    regular_uncalibrated = UnparameterizedRatioModel(
-        estimator=regular_estimator,
-        calibration_method=None,
-        normalize_input=False
-    )
+    regular_uncalibrated = UnparameterizedRatioModel(theta_0=theta_0, theta_1=theta_1, clf=regular_estimator)
 
     # bayesian, uncalibrated model
     bayesian_estimator = FlipoutClassifier(activation='relu', **hyperparams)
-    bayesian_uncalibrated = UnparameterizedRatioModel(
-        estimator=bayesian_estimator,
-        calibration_method=None,
-        normalize_input=False
-    )
+    bayesian_uncalibrated = UnparameterizedRatioModel(theta_0=theta_0, theta_1=theta_1, clf=bayesian_estimator)
 
     # regular, calibrated model
-    cv = StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1)
-    regular_calibrated = UnparameterizedRatioModel(
-        estimator=clone(regular_estimator),
-        calibration_method='histogram',
-        normalize_input=False,
-        cv=cv,
-        bins=15,
-        interpolation='quadratic'
-    )
+    calibrated_estimator = CalibratedClassifierCV(base_estimator=clone(regular_estimator), **calibration_params)
+    regular_calibrated = UnparameterizedRatioModel(theta_0=theta_0, theta_1=theta_1, clf=calibrated_estimator)
 
     models = {
         'Regular Uncalibrated': regular_uncalibrated,
@@ -91,8 +79,8 @@ def create_models(**hyperparams):
 
 
 def fit_predict_models(
-        models,
-        dataset,
+        models: Dict[str, UnparameterizedRatioModel],
+        dataset: UnparameterizedRatioDataset,
         x,
         verbose=False
 ):
@@ -102,9 +90,9 @@ def fit_predict_models(
     for model_name, model in models.items():
         if verbose:
             print(f'\n******* Fitting {model_name} *******\n')
-        model.fit(dataset)
-        predictions['y_pred', model_name] = model.predict_proba(x)[:, 1]
-        predictions['nllr', model_name] = model.predict_negative_log_likelihood_ratio(x)
+        model.fit(X=dataset.x, y=dataset.y)
+        predictions['y_pred', model_name] = model.clf.predict_proba(x.reshape(-1, 1))[:, 1]
+        predictions['nllr', model_name] = -model.predict(x.reshape(-1, 1), log=True)
 
     theta_0, theta_1 = dataset.theta_0, dataset.theta_1
     predictions['y_pred', 'Ideal'] = ideal_classifier_probs_from_simulator(x, triple_mixture, theta_0, theta_1)
@@ -176,6 +164,7 @@ def run_single_experiment(
         theta_0: float,
         theta_1: float,
         hyperparams: Dict,
+        calibration_params: Dict,
         n_data: int
 ):
     ds = create_dataset(
@@ -183,7 +172,12 @@ def run_single_experiment(
         theta_0=theta_0,
         theta_1=theta_1
     )
-    models = create_models(**hyperparams)
+    models = create_models(
+        theta_0=theta_0,
+        theta_1=theta_1,
+        hyperparams=hyperparams,
+        calibration_params=calibration_params
+    )
     x = np.linspace(-5, 5, int(1e4))
     predictions = fit_predict_models(models=models, x=x, dataset=ds)
     mses = calculate_mse(predictions)
@@ -195,7 +189,7 @@ def run_single_experiment(
 
 def run_experiments(n_experiments: int, **run_kwargs):
     set_all_random_seeds()
-    matplotlib_setup()
+    matplotlib_setup(use_tex=False)
     results = run_parallel_experiments(run_single_experiment, n_experiments, **run_kwargs)
     aggregated_results = _aggreate_experiment_results(results)
     scores_plot = plot_scores(aggregated_results['scores'])
@@ -219,6 +213,12 @@ if __name__ == '__main__':
             patience=2,
             validation_split=0.1,
             verbose=False,
+        ),
+        calibration_params=dict(
+            method='histogram',
+            cv=StratifiedShuffleSplit(n_splits=1, test_size=0.5, random_state=1),
+            bins=20,
+            interpolation='slinear'
         ),
         n_data=int(1e4)
     )

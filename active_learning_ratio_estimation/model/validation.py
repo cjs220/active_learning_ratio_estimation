@@ -10,7 +10,7 @@ import tensorflow_probability as tfp
 from sklearn.preprocessing import minmax_scale
 
 from active_learning_ratio_estimation.dataset import RatioDataset
-from active_learning_ratio_estimation.model import RatioModel
+from active_learning_ratio_estimation.model import BaseRatioModel
 
 
 def _get_softmax_logits_from_binary_probs(probs: np.ndarray):
@@ -27,13 +27,13 @@ def _get_softmax_logits_from_binary_probs(probs: np.ndarray):
 
 
 def get_calibration_metrics(
-        ratio_models: Union[Dict[str, RatioModel], RatioModel],
+        ratio_models: Union[Dict[str, BaseRatioModel], BaseRatioModel],
         dataset: RatioDataset,
         n_data: int = -1,
         n_bins: int = 10,
         strategy: str = 'uniform',
 ):
-    if isinstance(ratio_models, RatioModel):
+    if isinstance(ratio_models, BaseRatioModel):
         ratio_models = dict(Model=ratio_models)
 
     # shuffle and slice data
@@ -46,7 +46,7 @@ def get_calibration_metrics(
     calibration_curves = []
 
     for model_name, model in ratio_models.items():
-        y_prob = model.predict_proba_dataset(dataset_sample)[:, 1]
+        y_prob = model.clf.predict_proba(dataset_sample.build_input())[:, 1]
         if y_prob.max() >= 1.0:
             y_prob = minmax_scale(y_prob)
         y_pred = np.around(y_prob)

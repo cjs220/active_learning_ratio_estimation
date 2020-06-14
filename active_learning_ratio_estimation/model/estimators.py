@@ -18,11 +18,12 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
                  optimizer: str = 'adam',
                  run_eagerly: bool = False,
                  epochs: int = 10,
-                 batch_size: int = 32,
+                 fit_batch_size: int = 32,
                  validation_split: float = 0.2,
                  validation_batch_size: int = 32,
                  patience: int = 2,
                  verbose: int = 2,
+                 predict_batch_size: int = -1,
                  ):
         self.n_hidden = n_hidden
         self.scale_input = scale_input
@@ -35,11 +36,15 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
 
         # fit arguments
         self.epochs = epochs
-        self.batch_size = batch_size
+        self.fit_batch_size = fit_batch_size
         self.validation_split = validation_split
         self.validation_batch_size = validation_batch_size
+
         self.patience = patience
         self.verbose = verbose
+
+        # predict arguments
+        self.predict_batch_size = predict_batch_size
 
     def get_keras_model(self) -> tf.keras.Model:
         raise NotImplementedError
@@ -61,7 +66,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         model.fit(
             X, y,
             epochs=self.epochs,
-            batch_size=self.batch_size,
+            batch_size=self.fit_batch_size,
             callbacks=callbacks,
             verbose=self.verbose,
             validation_split=self.validation_split,
@@ -70,14 +75,15 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         self.model_ = model
         return self
 
-    def predict_proba(self, X, batch_size=-1, **predict_params):
+    def predict_proba(self, X, **predict_params):
         if self.scale_input:
             X = self.scaler_.transform(X)
 
+        batch_size = predict_params.get('batch_size', None) or self.predict_batch_size
         if batch_size == -1:
             batch_size = len(X)
 
-        probs = self.model_.predict(X, **predict_params)
+        probs = self.model_.predict(X, batch_size, **predict_params)
         probs = np.hstack([1 - probs, probs])
         return probs
 
@@ -96,10 +102,14 @@ class BaseBayesianWrapper(BaseWrapper, ABC):
         probs = super().predict_proba(X_tile, **predict_params).reshape(len(X), samples, 2)
         return probs
 
-    def predict_proba(self, X, samples=100, **predict_params):
+    def predict_proba(self, X, samples=100, return_std=False, **predict_params):
         probs = self.sample_predictive_distribution(X, samples=samples, **predict_params)
         mean_probs = probs.mean(axis=1)
-        return mean_probs
+        if return_std:
+            std = probs.std(axis=1, ddof=1)
+            return mean_probs, std
+        else:
+            return mean_probs
 
 
 class DenseClassifier(BaseWrapper):
