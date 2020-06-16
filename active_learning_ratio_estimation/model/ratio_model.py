@@ -7,7 +7,7 @@ import tensorflow as tf
 from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, Callable, \
     SinglyParameterizedRatioDataset, SingleParamIterator
 from active_learning_ratio_estimation.util import estimated_likelihood_ratio, estimated_log_likelihood_ratio, \
-    tile_reshape, concat_repeat, stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
+    stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
 from carl.learning import CalibratedClassifierCV
 
 
@@ -97,22 +97,18 @@ def param_scan(
         model: SinglyParameterizedRatioModel,
         X_true: np.ndarray,
         param_grid: ParamGrid,
-        theta_batch_size: int = 1,  # TODO: this is actually # of batches
         verbose: bool = False,
         **predict_params
 ):
     nllr = []
-    theta_groups = np.array_split(param_grid.array, theta_batch_size, axis=0)
-    iterator = tqdm(theta_groups) if verbose else theta_groups
-    for theta_group in iterator:
-        theta_1s = np.concatenate([tile_reshape(theta, reps=len(X_true))
-                                  for theta in theta_group], axis=0)
-        _X = concat_repeat(X_true, len(theta_group), axis=0)
+    iterator = tqdm(param_grid) if verbose else param_grid
+    for theta in iterator:
         # predict nllr for individual data points
-        logr = model.predict(_X, theta_1s=theta_1s, log=True, **predict_params)
+        theta_1s = stack_repeat(theta, len(X_true))
+        logr = model.predict(X_true, theta_1s=theta_1s, log=True, **predict_params)
         # predict nllr over the whole dataset x for each theta
-        nllr_pred = np.stack(np.split(-logr, len(theta_group))).sum(axis=1)
-        nllr.extend(nllr_pred)
+        nllr_pred = -logr.sum()
+        nllr.append(nllr_pred)
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]

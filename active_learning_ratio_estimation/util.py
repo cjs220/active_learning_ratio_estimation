@@ -5,8 +5,6 @@ from typing import Union, List, Callable
 import numpy as np
 from pandas.core.generic import NDFrame
 
-# from active_learning_ratio_estimation.dataset import ParamGrid
-
 
 def ideal_classifier_probs_from_simulator(x, simulator_func, theta_0, theta_1):
     l0, l1 = _get_likelihoods(x=x, simulator_func=simulator_func, theta_0=theta_0, theta_1=theta_1)
