@@ -3,6 +3,10 @@ from setuptools import setup
 setup(
     name='active_learning_ratio_estimation',
     version='0.1dev',
+    packages=['carl', 'carl.data', 'carl.ratios', 'carl.learning', 'carl.distributions', 'tests', 'tests.model',
+              'tests.active_learning', 'tests.functional_tests', 'active_learning_ratio_estimation',
+              'active_learning_ratio_estimation.model', 'active_learning_ratio_estimation.dataset',
+              'active_learning_ratio_estimation.active_learning'],
     url='github.com/cjs220/active_learning_ratio_estimation',
     license='MIT',
     author='Conor Sheehan',
@@ -20,5 +24,4 @@ setup(
         "tensorflow>=2.0",
         "tensorflow-probability>=0.8"
     ]
-
 )
