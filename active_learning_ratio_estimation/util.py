@@ -76,16 +76,6 @@ def build_simulator(simulator_func, theta):
     return simulator
 
 
-def dataframe_sample_statistics(all_dfs: List[NDFrame]):
-    # TODO: maybe delete this + its unit test
-    n = len(all_dfs)
-    mean = sum(all_dfs)/n
-    variance = sum([(df-mean)**2 for df in all_dfs])/(n-1)
-    std = variance**0.5
-    stderr = std/np.sqrt(n)
-    return mean, std, stderr
-
-
 def _get_likelihoods(x, simulator_func, theta_0, theta_1):
     dist_0 = build_simulator(simulator_func, theta_0)
     dist_1 = build_simulator(simulator_func, theta_1)

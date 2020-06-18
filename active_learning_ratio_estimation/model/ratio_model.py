@@ -1,10 +1,10 @@
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Callable
 
 import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 
-from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, Callable, \
+from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, \
     SinglyParameterizedRatioDataset, SingleParamIterator
 from active_learning_ratio_estimation.util import estimated_likelihood_ratio, estimated_log_likelihood_ratio, \
     stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
@@ -123,7 +123,6 @@ def calibrated_param_scan(
         n_samples_per_theta: int,
         calibration_params: Dict,
         verbose: bool = False,
-        **predict_params  # TODO: make this work
 ) -> Sequence[np.ndarray]:
     nllr = []
     iterator = tqdm(param_grid) if verbose else param_grid

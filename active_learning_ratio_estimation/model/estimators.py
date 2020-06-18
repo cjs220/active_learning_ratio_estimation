@@ -2,14 +2,14 @@ from abc import ABC
 from typing import Sequence
 
 import numpy as np
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
 
 from active_learning_ratio_estimation.model.keras_models import RegularDense, FlipoutDense
 
 
-class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
+class BaseWrapper(BaseEstimator,  ABC):
 
     def __init__(self,
                  n_hidden: Sequence[int] = (10, 10),
@@ -23,7 +23,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
                  validation_batch_size: int = 32,
                  patience: int = 2,
                  verbose: int = 2,
-                 predict_batch_size: int = -1,
+                 predict_batch_size: int = 32,
                  ):
         self.n_hidden = n_hidden
         self.scale_input = scale_input
@@ -49,7 +49,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
     def get_keras_model(self) -> tf.keras.Model:
         raise NotImplementedError
 
-    def fit(self, X, y):
+    def fit(self, X: np.ndarray, y: np.ndarray):
         if self.scale_input:
             self.scaler_ = StandardScaler()
             X = self.scaler_.fit_transform(X)
@@ -75,7 +75,7 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         self.model_ = model
         return self
 
-    def predict_proba(self, X, **predict_params):
+    def predict_proba(self, X: np.ndarray, **predict_params):
         if self.scale_input:
             X = self.scaler_.transform(X)
 
@@ -87,22 +87,21 @@ class BaseWrapper(BaseEstimator, ClassifierMixin, ABC):
         probs = np.hstack([1 - probs, probs])
         return probs
 
-    def predict(self, X, batch_size=-1, **kwargs):
-        return np.around(self.predict_proba(X, batch_size=-batch_size, **kwargs)[:, 1])
-
-    def score(self, X, y, sample_weight=None):
-        # TODO
-        pass
+    def predict(self, X: np.ndarray, **predict_params):
+        return np.around(self.predict_proba(X, **predict_params)[:, 1])
 
 
 class BaseBayesianWrapper(BaseWrapper, ABC):
 
-    def sample_predictive_distribution(self, X, samples=100, **predict_params):
+    def sample_predictive_distribution(self, X: np.ndarray, samples: int = 100, **predict_params) -> np.ndarray:
+        # get a number of samples from the predictive distribution
+        # The following implementation is not very memory efficient, but will likely be quicker for
+        # higher batch sizes; a lower RAM, but slower, implementation would be to iterate over samples
         X_tile = np.repeat(X, samples, axis=0)
         probs = super().predict_proba(X_tile, **predict_params).reshape(len(X), samples, 2)
         return probs
 
-    def predict_proba(self, X, samples=100, return_std=False, **predict_params):
+    def predict_proba(self, X, samples=100, return_std=False, **predict_params) -> np.ndarray:
         probs = self.sample_predictive_distribution(X, samples=samples, **predict_params)
         mean_probs = probs.mean(axis=1)
         if return_std:
