@@ -1,5 +1,5 @@
 from numbers import Number
-from typing import Callable, Union
+from typing import Callable, Union, Dict
 
 import numpy as np
 import tensorflow as tf
@@ -11,20 +11,12 @@ from active_learning_ratio_estimation.util import ensure_2d, ensure_array, stack
 tfd = tfp.distributions
 
 
-def build_unparameterized_input(x):
+def build_unparameterized_input(x) -> np.ndarray:
     return ensure_2d(x)
 
 
-def build_singly_parameterized_input(x, theta_1s):
+def build_singly_parameterized_input(x, theta_1s) -> np.ndarray:
     return np.concatenate([ensure_2d(x), ensure_2d(theta_1s)], axis=1)
-
-
-def _concat_if_not_none(x: Union[np.ndarray, None], y: Union[np.ndarray, None]) -> Union[np.ndarray, None]:
-    if x is not None and y is not None:
-        concat = np.concatenate([x, y], axis=0)
-    else:
-        concat = None
-    return concat
 
 
 class RatioDataset:
@@ -51,11 +43,15 @@ class RatioDataset:
         for arr in (y, log_prob_0, log_prob_1):
             if arr is not None:
                 arrs.append(arr)
+
         if len(set(map(len, arrs))) != 1:
             raise ValueError('Arrays have different lengths')
 
         if shuffle:
             self.shuffle()
+
+    def __len__(self):
+        return len(self.x)
 
     def shuffle(self):
         p = np.random.permutation(len(self.x))
@@ -63,7 +59,7 @@ class RatioDataset:
         self.theta_0s = self.theta_0s[p]
         self.theta_1s = self.theta_1s[p]
 
-        # shuffle y and nllr if they have been given
+        # shuffle y and log_probs if they have been given
         for arr_name in self._possibly_none_attrs:
             try:
                 arr = getattr(self, arr_name)
@@ -76,9 +72,6 @@ class RatioDataset:
     def build_input(self):
         raise NotImplementedError
 
-    def __len__(self):
-        return len(self.x)
-
     def _get_item_arrays(self, item):
         def _get_item_get_attr(attr_name):
             attr = getattr(self, attr_name)
@@ -90,7 +83,7 @@ class RatioDataset:
         return {attr_name: _get_item_get_attr(attr_name)
                 for attr_name in ['x', 'theta_0s', 'theta_1s'] + list(self._possibly_none_attrs)}
 
-    def _concat_data(self, other):
+    def _concat_data(self, other) -> Dict[str, np.ndarray]:
         # used to define __add__ in subclasses
         data = dict()
         for attr in ['x', 'theta_0s', 'theta_1s'] + list(self._possibly_none_attrs):
@@ -123,6 +116,12 @@ class UnparameterizedRatioDataset(RatioDataset):
                          log_prob_1=log_prob_1,
                          shuffle=shuffle)
 
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        arrays.pop('theta_1s')
+        return self.__class__(**arrays, theta_0=self.theta_0, theta_1=self.theta_1, shuffle=False)
+
     @classmethod
     def from_simulator(cls,
                        simulator_func: Callable,
@@ -133,7 +132,7 @@ class UnparameterizedRatioDataset(RatioDataset):
                        include_log_probs: bool = False,
                        ):
         theta_0, theta_1 = map(ensure_array, [theta_0, theta_1])
-        assert len(theta_0.shape) == 1 == len(theta_1.shape)
+        assert theta_0.ndim == 1 == theta_1.ndim
 
         sim0 = build_simulator(simulator_func, theta_0)
         sim1 = build_simulator(simulator_func, theta_1)
@@ -159,14 +158,8 @@ class UnparameterizedRatioDataset(RatioDataset):
                    log_prob_1=log_prob_1,
                    shuffle=shuffle)
 
-    def build_input(self):
+    def build_input(self) -> np.ndarray:
         return build_unparameterized_input(self.x)
-
-    def __getitem__(self, item):
-        arrays = self._get_item_arrays(item)
-        arrays.pop('theta_0s')
-        arrays.pop('theta_1s')
-        return self.__class__(**arrays, theta_0=self.theta_0, theta_1=self.theta_1, shuffle=False)
 
 
 class SinglyParameterizedRatioDataset(RatioDataset):
@@ -190,6 +183,17 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                          log_prob_1=log_prob_1,
                          shuffle=shuffle)
 
+    def __add__(self, other):
+        assert self.theta_0 == other.theta_0
+        concated_data = self._concat_data(other)
+        concated_data.pop('theta_0s')
+        return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)
+
+    def __getitem__(self, item):
+        arrays = self._get_item_arrays(item)
+        arrays.pop('theta_0s')
+        return self.__class__(**arrays, theta_0=self.theta_0, shuffle=False)
+
     @classmethod
     def from_simulator(cls,
                        simulator_func: Callable,
@@ -200,7 +204,7 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                        include_log_probs: bool = False
                        ):
         theta_0 = ensure_array(theta_0)
-        assert len(theta_0.shape) == 1
+        assert theta_0.ndim == 1
 
         sim0 = build_simulator(simulator_func, theta_0)
         x0 = sim0.sample(n_samples_per_theta * len(theta_1_iterator)).numpy()
@@ -216,7 +220,6 @@ class SinglyParameterizedRatioDataset(RatioDataset):
             log_prob_1_x0 = []
             log_prob_1_x1 = []
 
-        # @tf.function
         def _simulate(theta_1, x0_i):
             sim1 = build_simulator(simulator_func, theta_1)
             x1_i = sim1.sample(n_samples_per_theta).numpy()
@@ -254,16 +257,13 @@ class SinglyParameterizedRatioDataset(RatioDataset):
                    log_prob_1=log_prob_1,
                    shuffle=shuffle)
 
-    def build_input(self):
+    def build_input(self) -> np.ndarray:
         return build_singly_parameterized_input(x=self.x, theta_1s=self.theta_1s)
 
-    def __add__(self, other):
-        assert self.theta_0 == other.theta_0
-        concated_data = self._concat_data(other)
-        concated_data.pop('theta_0s')
-        return self.__class__(theta_0=self.theta_0, **concated_data, shuffle=False)
 
-    def __getitem__(self, item):
-        arrays = self._get_item_arrays(item)
-        arrays.pop('theta_0s')
-        return self.__class__(**arrays, theta_0=self.theta_0, shuffle=False)
+def _concat_if_not_none(x: Union[np.ndarray, None], y: Union[np.ndarray, None]) -> Union[np.ndarray, None]:
+    if x is not None and y is not None:
+        concat = np.concatenate([x, y], axis=0)
+    else:
+        concat = None
+    return concat

@@ -1,206 +1,169 @@
-from typing import Callable, List
+from typing import Dict, Sequence, Callable
 
 import numpy as np
-import tensorflow_probability as tfp
-from joblib import Parallel, delayed
-
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
+import tensorflow as tf
 
-from active_learning_ratio_estimation.dataset import RatioDataset, SinglyParameterizedRatioDataset, \
-    UnparameterizedRatioDataset, build_unparameterized_input, build_singly_parameterized_input, ParamGrid, \
-    SingleParamIterator
-from active_learning_ratio_estimation.util import tile_reshape, outer_prod_shape_to_meshgrid_shape, concat_repeat, \
-    stack_repeat, estimated_likelihood_ratio
+from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, \
+    SinglyParameterizedRatioDataset, SingleParamIterator
+from active_learning_ratio_estimation.util import estimated_likelihood_ratio, estimated_log_likelihood_ratio, \
+    stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
 from carl.learning import CalibratedClassifierCV
 
-tfd = tfp.distributions
+
+class BaseRatioModel:
+    def __init__(self, clf):
+        self.clf = clf
+
+    def _fit(self, X: np.ndarray, y: np.ndarray, **fit_params):
+        self.clf.fit(X, y, **fit_params)
+        return self
+
+    def _predict(self, X: np.ndarray, log=False, **predict_params):
+        y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
+        if log:
+            return estimated_log_likelihood_ratio(y_prob)
+        else:
+            return estimated_likelihood_ratio(y_prob)
 
 
-class RatioModel:
-    def __init__(self,
-                 estimator,
-                 calibration_method=None,
-                 normalize_input=True,
-                 **calibration_kwargs
-                 ):
-        self.calibration_method = calibration_method
-        if calibration_method is not None:
-            estimator = CalibratedClassifierCV(base_estimator=estimator,
-                                               method=self.calibration_method,
-                                               **calibration_kwargs)
+class UnparameterizedRatioModel(BaseRatioModel):
 
-        steps = [('clf', estimator)]
-        if normalize_input:
-            steps.insert(0, ('StandardScaler', StandardScaler()))
-        self.estimator = Pipeline(steps=steps)
+    def __init__(self, theta_0, theta_1, clf):
+        self._theta_0 = theta_0
+        self._theta_1 = theta_1
+        super().__init__(clf)
 
     @property
-    def keras_model_(self):
-        return self.estimator.steps[-1][1].model_
+    def theta_0(self):
+        return self._theta_0
 
-    def fit(self, dataset: RatioDataset):
-        model_input = dataset.build_input()
-        self.estimator.fit(model_input, dataset.y)
-        return self
+    @property
+    def theta_1(self):
+        return self._theta_1
 
-    def predict(self, *args):
-        raise NotImplementedError
+    def fit(self, X: np.ndarray, y: np.ndarray, **fit_params):
+        return self._fit(X, y, **fit_params)
 
-    def predict_proba(self, *args):
-        raise NotImplementedError
-
-    def predict_likelihood_ratio(self, x, *args):
-        probs = self.predict_proba(x, *args)[:, 1]
-        return estimated_likelihood_ratio(probs)
-
-    def predict_negative_log_likelihood_ratio(self, x, *args):
-        return -np.log(self.predict_likelihood_ratio(x, *args))
-
-    def _call_on_dataset(self, method: str, dataset: RatioDataset):
-        model_input = dataset.build_input()
-        return getattr(self.estimator, method)(model_input)
-
-    def predict_dataset(self, dataset: RatioDataset):
-        return self._call_on_dataset('predict', dataset)
-
-    def predict_proba_dataset(self, dataset: RatioDataset):
-        return self._call_on_dataset('predict_proba', dataset)
-
-    def predict_likelihood_ratio_dataset(self, dataset: RatioDataset):
-        probs = self.predict_proba_dataset(dataset)
-        return estimated_likelihood_ratio(probs)
-
-    def predict_nllr_dataset(self, dataset):
-        return -np.log(self.predict_likelihood_ratio_dataset(dataset))
+    def predict(self, X: np.ndarray, log=False, **predict_params):
+        return self._predict(X, log=log, **predict_params)
 
 
-class UnparameterizedRatioModel(RatioModel):
+class SinglyParameterizedRatioModel(BaseRatioModel):
 
-    def fit(self, dataset: UnparameterizedRatioDataset):
-        assert isinstance(dataset, UnparameterizedRatioDataset)
-        super().fit(dataset)
-        self.theta_0_ = dataset.theta_0
-        self.theta_1_ = dataset.theta_1
-        return self
+    def __init__(self, theta_0, clf):
+        self._theta_0 = theta_0
+        super().__init__(clf)
 
-    def predict(self, x):
-        model_input = build_unparameterized_input(x)
-        return self.estimator.predict(model_input)
+    @property
+    def theta_0(self):
+        return self._theta_0
 
-    def predict_proba(self, x, *args):
-        model_input = build_unparameterized_input(x)
-        return self.estimator.predict_proba(model_input)
+    def fit(self, X: np.ndarray, theta_1s: np.ndarray, y: np.ndarray, **fit_params):
+        model_input = build_singly_parameterized_input(X, theta_1s)
+        return self._fit(model_input, y, **fit_params)
 
+    def predict(self, X: np.ndarray, theta_1s: np.ndarray, log=False, **predict_params):
+        model_input = build_singly_parameterized_input(X, theta_1s)
+        return self._predict(model_input, log=log, **predict_params)
 
-class SinglyParameterizedRatioModel(RatioModel):
-
-    def fit(self, dataset: SinglyParameterizedRatioDataset):
-        assert isinstance(dataset, SinglyParameterizedRatioDataset)
-        super().fit(dataset)
-        self.theta_0_ = dataset.theta_0
-        return self
-
-    def predict(self, x, theta_1):
-        assert len(theta_1) == len(x)
-        model_input = build_singly_parameterized_input(x=x, theta_1s=theta_1)
-        return self.estimator.predict(model_input)
-
-    def predict_proba(self, x, theta_1):
-        if not len(theta_1) == len(x):
-            assert theta_1.shape == self.theta_0_.shape
-            theta_1 = stack_repeat(theta_1, len(x))
-        model_input = build_singly_parameterized_input(x=x, theta_1s=theta_1)
-        return self.estimator.predict_proba(model_input)
-
-    def predict_dataset(self, dataset: SinglyParameterizedRatioDataset):
-        assert np.all(self.theta_0_ == dataset.theta_0)
-        return super().predict_dataset(dataset)
-
-    def predict_proba_dataset(self, dataset: SinglyParameterizedRatioDataset):
-        assert np.all(self.theta_0_ == dataset.theta_0)
-        return super().predict_proba_dataset(dataset)
-
-    def _param_scan(self,
-                    x: np.ndarray,
-                    param_grid: ParamGrid,
-                    meshgrid_shape: bool = True,
-                    get_model: Callable = None,
-                    verbose: bool = False
-                    ):
-
-        def _calc_nllr(theta):
-            theta_1 = tile_reshape(theta, reps=len(x))
-            model = get_model(theta) if get_model is not None else self
-            # predict nllr for individual data points
-            nllr_pred = model.predict_negative_log_likelihood_ratio(x, theta_1)
-            # predict nllr over the whole dataset
-            return nllr_pred.sum()
-
-        nllr = []
-        iterator = tqdm(param_grid) if verbose else param_grid
-        for theta in iterator:
-            nllr.append(_calc_nllr(theta))
-
-        nllr = np.array(nllr)
-        mle = param_grid[np.argmin(nllr)]
-        if meshgrid_shape:
-            meshgrid = param_grid.meshgrid()
-            nllr = outer_prod_shape_to_meshgrid_shape(nllr, meshgrid[0])
-        return nllr, mle
-
-    def nllr_param_scan(self,
-                        x: np.ndarray,
-                        param_grid: ParamGrid,
-                        meshgrid_shape: bool = True,
-                        verbose: bool = False
-                        ):
-        nllr, mle = self._param_scan(
-            get_model=None,
-            x=x,
-            param_grid=param_grid,
-            meshgrid_shape=meshgrid_shape,
-            verbose=verbose
+    def calibrated_predict(self,
+                           X: np.ndarray,
+                           theta: np.ndarray,
+                           n_samples_per_theta: int,
+                           simulator_func: Callable,
+                           calibration_params: Dict,
+                           log=False,
+                           return_calibrated_model=False,
+                           ):
+        cal_clf = CalibratedClassifierCV(base_estimator=self.clf, cv='prefit', **calibration_params)
+        cal_model = self.__class__(theta_0=self.theta_0, clf=cal_clf)
+        calibration_ds = SinglyParameterizedRatioDataset.from_simulator(
+            simulator_func=simulator_func,
+            theta_0=self.theta_0,
+            theta_1_iterator=SingleParamIterator(theta),
+            n_samples_per_theta=n_samples_per_theta
         )
-        return nllr, mle
+        cal_model.fit(X=calibration_ds.x, theta_1s=calibration_ds.theta_1s, y=calibration_ds.y)
+        theta_1s = stack_repeat(theta, len(X))
+        pred = cal_model.predict(X=X, theta_1s=theta_1s, log=log)
+        if return_calibrated_model:
+            return pred, cal_model
+        else:
+            return pred
 
-    def nllr_param_scan_with_calibration(self,
-                                         x: np.ndarray,
-                                         param_grid: ParamGrid,
-                                         n_samples_per_theta: int,
-                                         simulator_func: Callable,
-                                         calibration_method: str = 'sigmoid',
-                                         meshgrid_shape: bool = True,
-                                         verbose: bool = False,
-                                         **calibration_kwargs
-                                         ):
-        # like nllr param scan, but with calibration at each parameter point
-        assert self.calibration_method is None
 
-        def _calibrate_on_predict(theta):
-            new_model = self.__class__(
-                estimator=self.estimator,
-                calibration_method=calibration_method,
-                normalize_input=False,
-                cv='prefit',
-                **calibration_kwargs
-            )
-            new_ds = SinglyParameterizedRatioDataset.from_simulator(
-                simulator_func=simulator_func,
-                theta_0=self.theta_0_,
-                theta_1_iterator=SingleParamIterator(theta),
-                n_samples_per_theta=n_samples_per_theta
-            )
-            new_model.fit(new_ds)
-            return new_model
+def param_scan(
+        model: SinglyParameterizedRatioModel,
+        X_true: np.ndarray,
+        param_grid: ParamGrid,
+        verbose: bool = False,
+        **predict_params
+):
+    nllr = []
+    iterator = tqdm(param_grid) if verbose else param_grid
+    for theta in iterator:
+        # predict nllr for individual data points
+        theta_1s = stack_repeat(theta, len(X_true))
+        logr = model.predict(X_true, theta_1s=theta_1s, log=True, **predict_params)
+        # predict nllr over the whole dataset x for each theta
+        nllr_pred = -logr.sum()
+        nllr.append(nllr_pred)
 
-        nllr, mle = self._param_scan(
-            get_model=_calibrate_on_predict,
-            x=x,
-            param_grid=param_grid,
-            meshgrid_shape=meshgrid_shape,
-            verbose=verbose
+    nllr = np.array(nllr)
+    mle = param_grid[np.argmin(nllr)]
+    return _to_meshgrid_shape(nllr, param_grid), mle
+
+
+def calibrated_param_scan(
+        model: SinglyParameterizedRatioModel,
+        X_true: np.ndarray,
+        param_grid: ParamGrid,
+        simulator_func: Callable,
+        n_samples_per_theta: int,
+        calibration_params: Dict,
+        verbose: bool = False,
+) -> Sequence[np.ndarray]:
+    nllr = []
+    iterator = tqdm(param_grid) if verbose else param_grid
+
+    for theta in iterator:
+        logr = model.calibrated_predict(
+            X=X_true,
+            theta=theta,
+            n_samples_per_theta=n_samples_per_theta,
+            simulator_func=simulator_func,
+            calibration_params=calibration_params,
+            log=True,
         )
+        nllr_pred = -logr.sum()
+        nllr.append(nllr_pred)
 
-        return nllr, mle
+    nllr = np.array(nllr)
+    mle = param_grid[np.argmin(nllr)]
+    return _to_meshgrid_shape(nllr, param_grid), mle
+
+
+def exact_param_scan(
+        simulator_func: Callable,
+        X_true: np.ndarray,
+        param_grid: ParamGrid,
+        theta_0: float
+) -> Sequence[np.ndarray]:
+
+    p_0 = build_simulator(simulator_func=simulator_func, theta=theta_0)
+    log_prob_0 = p_0.log_prob(X_true)
+
+    @tf.function
+    def exact_nllr(theta):
+        p_theta = build_simulator(simulator_func=simulator_func, theta=theta)
+        return -tf.keras.backend.sum(p_theta.log_prob(X_true) - log_prob_0)
+
+    nllr = np.array([exact_nllr(theta.squeeze()).numpy() for theta in param_grid])
+    mle = param_grid[np.argmin(nllr)]
+    return _to_meshgrid_shape(nllr, param_grid), mle
+
+
+def _to_meshgrid_shape(arr: np.ndarray, param_grid: ParamGrid):
+    meshgrid = param_grid.meshgrid()
+    return outer_prod_shape_to_meshgrid_shape(arr, meshgrid[0])

@@ -1,17 +1,9 @@
 import itertools
 from numbers import Number
-from typing import Union, List
+from typing import Union, List, Callable
 
 import numpy as np
 from pandas.core.generic import NDFrame
-
-
-def _get_likelihoods(x, simulator_func, theta_0, theta_1):
-    dist_0 = build_simulator(simulator_func, theta_0)
-    dist_1 = build_simulator(simulator_func, theta_1)
-    l0 = dist_0.prob(x).numpy()
-    l1 = dist_1.prob(x).numpy()
-    return l0, l1
 
 
 def ideal_classifier_probs_from_simulator(x, simulator_func, theta_0, theta_1):
@@ -25,6 +17,10 @@ def ideal_classifier_probs(l0, l1):
 
 def estimated_likelihood_ratio(probs):
     return probs / (1 - probs)
+
+
+def estimated_log_likelihood_ratio(probs):
+    return np.log(probs) - np.log(1-probs)
 
 
 def likelihood_ratio(x, simulator_func, theta_0, theta_1):
@@ -41,11 +37,16 @@ def tile_reshape(theta: np.ndarray, reps: int) -> np.ndarray:
 
 
 def outer_prod_shape_to_meshgrid_shape(outer_prod, mesh_grid_arr):
-    reshaped = np.zeros_like(mesh_grid_arr)
-    for i in range(len(outer_prod)):
-        j = i // mesh_grid_arr.shape[0]
-        k = i % mesh_grid_arr.shape[0]
-        reshaped[k, j] = outer_prod[i]
+    if mesh_grid_arr.ndim == 1:
+        reshaped = outer_prod
+    elif mesh_grid_arr.ndim == 2:
+        reshaped = np.zeros_like(mesh_grid_arr)
+        for i in range(len(outer_prod)):
+            j = i // mesh_grid_arr.shape[0]
+            k = i % mesh_grid_arr.shape[0]
+            reshaped[k, j] = outer_prod[i]
+    else:
+        raise NotImplementedError
     return reshaped
 
 
@@ -75,11 +76,9 @@ def build_simulator(simulator_func, theta):
     return simulator
 
 
-def dataframe_sample_statistics(all_dfs: List[NDFrame]):
-    # TODO: maybe delete this + its unit test
-    n = len(all_dfs)
-    mean = sum(all_dfs)/n
-    variance = sum([(df-mean)**2 for df in all_dfs])/(n-1)
-    std = variance**0.5
-    stderr = std/np.sqrt(n)
-    return mean, std, stderr
+def _get_likelihoods(x, simulator_func, theta_0, theta_1):
+    dist_0 = build_simulator(simulator_func, theta_0)
+    dist_1 = build_simulator(simulator_func, theta_1)
+    l0 = dist_0.prob(x).numpy()
+    l1 = dist_1.prob(x).numpy()
+    return l0, l1

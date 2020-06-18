@@ -55,5 +55,5 @@ class ParamGrid(ParamIterator):
 class DistributionParamIterator(ParamIterator):
 
     def __init__(self, theta_dist: tfd.Distribution, n_samples: int):
-        arr = theta_dist.sample(n_samples).numpy().tolist()
-        super().__init__(arr)
+        arr = theta_dist.sample(n_samples).numpy()
+        super().__init__([sub_arr for sub_arr in arr])
