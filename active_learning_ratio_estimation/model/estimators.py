@@ -63,7 +63,7 @@ class BaseWrapper(BaseEstimator,  ABC):
         metrics = ['accuracy']
         model.compile(loss=self.loss, optimizer=self.optimizer, run_eagerly=self.run_eagerly, metrics=metrics)
         callbacks = [tf.keras.callbacks.EarlyStopping(patience=self.patience, restore_best_weights=True)]
-        model.fit(
+        self.history_ = model.fit(
             X, y,
             epochs=self.epochs,
             batch_size=self.fit_batch_size,
