@@ -6,6 +6,7 @@ import tensorflow as tf
 
 from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, \
     SinglyParameterizedRatioDataset, SingleParamIterator
+from active_learning_ratio_estimation.model.estimators import BaseWrapper
 from active_learning_ratio_estimation.util import estimated_likelihood_ratio, estimated_log_likelihood_ratio, \
     stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
 from carl.learning import CalibratedClassifierCV
@@ -16,14 +17,19 @@ class BaseRatioModel:
         self.clf = clf
 
     def _fit(self, X: np.ndarray, y: np.ndarray, **fit_params):
-        self.clf.fit(X, y, **fit_params)
+        self.clf.fit(X, y, **fit_params)  # TODO
         return self
 
     def _predict(self, X: np.ndarray, log=False, **predict_params):
-        y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
         if log:
-            return estimated_log_likelihood_ratio(y_prob)
+            try:
+                logr = self.clf.predict_logits(X=X, **predict_params)
+            except AttributeError:
+                y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
+                logr = estimated_log_likelihood_ratio(y_prob)
+            return logr  # TODO
         else:
+            y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
             return estimated_likelihood_ratio(y_prob)
 
 
