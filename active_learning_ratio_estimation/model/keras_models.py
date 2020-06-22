@@ -11,8 +11,8 @@ class BaseDense(tf.keras.Sequential):
     def __init__(self, n_hidden=(10, 10), activation='relu'):
         self.n_hidden = n_hidden
         self.activation = activation
-        layers = [self.dense_layer(units, activation=activation) for units in n_hidden]
-        layers.append(self.dense_layer(1, 'sigmoid'))
+        layers = [self.dense_layer(units=units, activation=activation) for units in n_hidden]
+        layers.append(self.dense_layer(units=1, activation=None))
         super().__init__(layers)
 
     def dense_layer(self, units, activation):

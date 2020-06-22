@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from active_learning_ratio_estimation.model.keras_models import RegularDense, FlipoutDense
 
 
-class BaseWrapper(BaseEstimator,  ABC):
+class BaseWrapper(BaseEstimator, ABC):
 
     def __init__(self,
                  n_hidden: Sequence[int] = (10, 10),
@@ -30,7 +30,7 @@ class BaseWrapper(BaseEstimator,  ABC):
         self.activation = activation
 
         # compile arguments
-        self.loss = tf.keras.losses.BinaryCrossentropy()
+        self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         self.optimizer = optimizer
         self.run_eagerly = run_eagerly
 
@@ -75,7 +75,7 @@ class BaseWrapper(BaseEstimator,  ABC):
         self.model_ = model
         return self
 
-    def predict_proba(self, X: np.ndarray, **predict_params):
+    def predict_logits(self, X: np.ndarray, **predict_params):
         if self.scale_input:
             X = self.scaler_.transform(X)
 
@@ -83,7 +83,12 @@ class BaseWrapper(BaseEstimator,  ABC):
         if batch_size == -1:
             batch_size = len(X)
 
-        probs = self.model_.predict(X, batch_size, **predict_params)
+        logits = self.model_.predict(X, batch_size, **predict_params)
+        return logits
+
+    def predict_proba(self, X: np.ndarray, **predict_params):
+        logits = self.predict_logits(X=X, **predict_params)
+        probs = tf.nn.sigmoid(logits).numpy()
         probs = np.hstack([1 - probs, probs])
         return probs
 
@@ -98,17 +103,31 @@ class BaseBayesianWrapper(BaseWrapper, ABC):
         # The following implementation is not very memory efficient, but will likely be quicker for
         # higher batch sizes; a lower RAM, but slower, implementation would be to iterate over samples
         X_tile = np.repeat(X, samples, axis=0)
-        probs = super().predict_proba(X_tile, **predict_params).reshape(len(X), samples, 2)
-        return probs
+        logits_samples = super().predict_logits(X_tile, **predict_params).reshape(len(X), samples)
+        return logits_samples
 
-    def predict_proba(self, X, samples=100, return_std=False, **predict_params) -> np.ndarray:
-        probs = self.sample_predictive_distribution(X, samples=samples, **predict_params)
-        mean_probs = probs.mean(axis=1)
+    def predict_logits(self, X, samples=100, return_std=False, **predict_params) -> np.ndarray:
+        logits_samples = self.sample_predictive_distribution(X, samples=samples, **predict_params)
+        mean_logits = logits_samples.mean(axis=1)
         if return_std:
-            std = probs.std(axis=1, ddof=1)
-            return mean_probs, std
+            std = logits_samples.std(axis=1, ddof=1)
+            return mean_logits, std
         else:
-            return mean_probs
+            return mean_logits
+
+    def predict_proba(self, X: np.ndarray, samples=100, return_std=False, **predict_params):
+        logits_samples = self.sample_predictive_distribution(X=X, samples=samples, **predict_params)
+        probs_samples = tf.nn.sigmoid(logits_samples).numpy()
+        probs = probs_samples.mean(axis=1)
+        probs = np.stack([1 - probs, probs], axis=1)
+        if return_std:
+            std = probs_samples.std(axis=1, ddof=1)
+            return probs, std
+        else:
+            return probs
+
+    def predict(self, X: np.ndarray, **predict_params):
+        raise NotImplementedError
 
 
 class DenseClassifier(BaseWrapper):
