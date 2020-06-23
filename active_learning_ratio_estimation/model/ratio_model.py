@@ -6,7 +6,6 @@ import tensorflow as tf
 
 from active_learning_ratio_estimation.dataset import ParamGrid, build_singly_parameterized_input, \
     SinglyParameterizedRatioDataset, SingleParamIterator
-from active_learning_ratio_estimation.model.estimators import BaseWrapper
 from active_learning_ratio_estimation.util import estimated_likelihood_ratio, estimated_log_likelihood_ratio, \
     stack_repeat, outer_prod_shape_to_meshgrid_shape, build_simulator
 from carl.learning import CalibratedClassifierCV
@@ -20,17 +19,25 @@ class BaseRatioModel:
         self.clf.fit(X, y, **fit_params)  # TODO
         return self
 
-    def _predict(self, X: np.ndarray, log=False, **predict_params):
+    def _predict(self, X: np.ndarray, log=False, return_std=False, **predict_params):
         if log:
-            try:
-                logr = self.clf.predict_logits(X=X, **predict_params)
-            except AttributeError:
-                y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
-                logr = estimated_log_likelihood_ratio(y_prob)
-            return logr  # TODO
+            if hasattr(self.clf, 'predict_logits'):
+                prediction = self._predict_log_from_logits(X=X, return_std=return_std, **predict_params)
+            else:
+                assert not return_std
+                y_prob = self.clf.predict_proba(X=X, **predict_params)[:, 1]
+                prediction = estimated_log_likelihood_ratio(y_prob)
         else:
-            y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
-            return estimated_likelihood_ratio(y_prob)
+            assert not return_std
+            y_prob = self.clf.predict_proba(X=X, **predict_params)[:, 1]
+            prediction = estimated_likelihood_ratio(y_prob)
+        return prediction
+
+    def _predict_log_from_logits(self, X: np.ndarray, return_std: bool, **predict_params):
+        if return_std:
+            predict_params['return_std'] = True
+
+        return self.clf.predict_logits(X=X, **predict_params)
 
 
 class UnparameterizedRatioModel(BaseRatioModel):
