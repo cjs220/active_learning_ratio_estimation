@@ -41,20 +41,19 @@ class ActiveLearner:
             theta_1_iterator=initial_theta_1s,
             n_samples_per_theta=n_samples_per_theta,
         )
-        self.model_fit()
-        self.predict()
 
     def fit(self, n_iter: int):
-
+        self.model_fit()
+        self.predict()
         for i in range(n_iter):
             iter_msg = f'Active learning iteration {i + 1}/{n_iter}'
             if self.verbose:
                 print(iter_msg)
-            self.step()
+            self._step()
 
         return self
 
-    def step(self):
+    def _step(self):
         next_theta_index = self.choose_next_theta_index()
         next_theta = self.all_thetas[next_theta_index]
 
