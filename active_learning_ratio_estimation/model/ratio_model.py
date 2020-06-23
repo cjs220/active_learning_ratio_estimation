@@ -111,6 +111,7 @@ def param_scan(
         X_true: np.ndarray,
         param_grid: ParamGrid,
         return_std: bool = False,
+        to_meshgrid_shape: bool = True,
         verbose: bool = False,
         **predict_params
 ):
@@ -137,11 +138,13 @@ def param_scan(
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]
-    nllr = _to_meshgrid_shape(nllr, param_grid)
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
 
     if return_std:
         stds = np.array(stds)
-        stds = _to_meshgrid_shape(stds, param_grid)
+        if to_meshgrid_shape:
+            stds = _to_meshgrid_shape(stds, param_grid)
         return nllr, stds, mle
 
     else:
@@ -155,6 +158,7 @@ def calibrated_param_scan(
         simulator_func: Callable,
         n_samples_per_theta: int,
         calibration_params: Dict,
+        to_meshgrid_shape: bool = True,
         verbose: bool = False,
 ) -> Sequence[np.ndarray]:
     nllr = []
@@ -174,14 +178,19 @@ def calibrated_param_scan(
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    return nllr, mle
 
 
 def exact_param_scan(
         simulator_func: Callable,
         X_true: np.ndarray,
         param_grid: ParamGrid,
-        theta_0: float
+        theta_0: float,
+        to_meshgrid_shape: bool = True
 ) -> Sequence[np.ndarray]:
 
     p_0 = build_simulator(simulator_func=simulator_func, theta=theta_0)
@@ -194,7 +203,11 @@ def exact_param_scan(
 
     nllr = np.array([exact_nllr(theta.squeeze()).numpy() for theta in param_grid])
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    return nllr, mle
 
 
 def _to_meshgrid_shape(arr: np.ndarray, param_grid: ParamGrid):
