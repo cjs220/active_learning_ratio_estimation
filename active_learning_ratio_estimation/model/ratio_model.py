@@ -110,22 +110,42 @@ def param_scan(
         model: SinglyParameterizedRatioModel,
         X_true: np.ndarray,
         param_grid: ParamGrid,
+        return_std: bool = False,
         verbose: bool = False,
         **predict_params
 ):
     nllr = []
+
+    if return_std:
+        stds = []
+        predict_params['return_std'] = True
+
     iterator = tqdm(param_grid) if verbose else param_grid
     for theta in iterator:
         # predict nllr for individual data points
         theta_1s = stack_repeat(theta, len(X_true))
         logr = model.predict(X_true, theta_1s=theta_1s, log=True, **predict_params)
+
+        if return_std:
+            logr, std = logr
+            std = (std**2).sum()  # adding Gaussian uncertainties in quadrature
+            stds.append(std)
+
         # predict nllr over the whole dataset x for each theta
         nllr_pred = -logr.sum()
         nllr.append(nllr_pred)
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+    nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    if return_std:
+        stds = np.array(stds)
+        stds = _to_meshgrid_shape(stds, param_grid)
+        return nllr, stds, mle
+
+    else:
+        return nllr, mle
 
 
 def calibrated_param_scan(
