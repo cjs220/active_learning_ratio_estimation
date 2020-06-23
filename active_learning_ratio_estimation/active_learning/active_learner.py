@@ -1,43 +1,175 @@
 from numbers import Number
-from typing import Callable, Union
+from typing import Callable, Union, List
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
-from active_learning_ratio_estimation.dataset import ParamIterator, ParamGrid, SinglyParameterizedRatioDataset
+from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset, \
+    SingleParamIterator
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel
+from active_learning_ratio_estimation.model.ratio_model import exact_param_scan, param_scan
 
 
 class ActiveLearner:
     def __init__(self,
                  simulator_func: Callable,
+                 X_true: np.ndarray,
+                 theta_true: Union[Number, np.ndarray],
                  theta_0: Union[Number, np.ndarray],
-                 theta_1_iterator: ParamIterator,
                  n_samples_per_theta: int,
+                 initial_idx: List[int],
                  ratio_model: SinglyParameterizedRatioModel,
                  total_param_grid: ParamGrid,
-                 ucb_kappa: float = 1.0,
                  ):
-        self._train_history = []
-        self._test_history = []
+        self.simulator_func = simulator_func
+        self.X_true = X_true
+        self.theta_true = theta_true
         self.theta_0 = theta_0
         self.n_samples_per_theta = n_samples_per_theta
-        # logger.info('Initialised ActiveLeaner; simulating initial dataset.')
+
+        self.ratio_model = ratio_model
+        self.param_grid = total_param_grid
+
+        self._trialed_idx = initial_idx
+        self._nllr_predictions = []
+        self._mle_predictions = []
+
+        initial_theta_1s = total_param_grid[initial_idx]
         self.dataset = SinglyParameterizedRatioDataset.from_simulator(
             simulator_func=simulator_func,
             theta_0=theta_0,
-            theta_1_iterator=theta_1_iterator,
+            theta_1_iterator=initial_theta_1s,
             n_samples_per_theta=n_samples_per_theta,
         )
-        self.ratio_model = ratio_model
+
+        if hasattr(simulator_func, 'log_prob'):
+            self.exact_contours, self.exact_mle = exact_param_scan(
+                simulator_func=simulator_func,
+                X_true=X_true,
+                param_grid=total_param_grid,
+                theta_0=theta_0,
+                to_meshgrid_shape=False,
+            )
+        else:
+            self.exact_contours = None
+            self.exact_mle = None
+
         self.model_fit()
-        self.param_grid = total_param_grid
-        trialed_mask = np.array([np.array(total_param_grid.values) == theta
-                                 for theta in theta_1_iterator]).all(axis=2).sum(axis=0).astype(bool)
-        self._trialed_idx = np.arange(len(total_param_grid))[trialed_mask].tolist()
-        self.simulator_func = simulator_func
-        self.ucb_kappa = ucb_kappa
+
+    def fit(self, n_iter: int, verbose: bool = True):
+
+        for i in range(n_iter):
+            iter_msg = f'Active learning iteration {i + 1}/{n_iter}'
+            if verbose:
+                print(iter_msg)
+            self.step(verbose=verbose)
+
+        return self
+
+    def step(self, verbose=True):
+        next_theta_index = self.choose_next_theta_index(verbose=verbose)
+        assert next_theta_index not in self._trialed_idx
+        next_theta = self.all_thetas[next_theta_index]
+
+        new_ds = SinglyParameterizedRatioDataset.from_simulator(
+            simulator_func=self.simulator_func,
+            theta_0=self.theta_0,
+            theta_1_iterator=SingleParamIterator(next_theta),
+            n_samples_per_theta=self.n_samples_per_theta,
+        )
+        self.dataset += new_ds
+        self.dataset.shuffle()
+        self.model_fit()
+        self._trialed_idx.append(next_theta_index)
 
     def model_fit(self):
-        self.ratio_model.fit(X=np.ndarray)
+        self.ratio_model.fit(X=np.ndarray, theta_1s=self.dataset.theta_1s, y=self.dataset.y)
+
+    def choose_next_theta_index(self, verbose=True) -> int:
+        raise NotImplementedError
+
+    @property
+    def all_thetas(self):
+        return self.param_grid.array
+
+    @property
+    def _untrialed_idx(self):
+        return np.delete(np.arange(len(self.all_thetas)), self._trialed_idx, axis=0).tolist()
+
+    @property
+    def trialed_thetas(self):
+        return self.param_grid.array[self._trialed_idx]
+
+    @property
+    def untrialed_thetas(self):
+        return self.param_grid.array[self._untrialed_idx]
+
+
+class UpperConfidenceBoundLearner(ActiveLearner):
+
+    def __init__(self,
+                 simulator_func: Callable,
+                 X_true: np.ndarray,
+                 theta_true: Union[Number, np.ndarray],
+                 theta_0: Union[Number, np.ndarray],
+                 n_samples_per_theta: int,
+                 initial_idx: List[int],
+                 ratio_model: SinglyParameterizedRatioModel,
+                 total_param_grid: ParamGrid,
+                 ucb_kappa: float = 1.0
+                 ):
+        super().__init__(
+            simulator_func=simulator_func,
+            X_true=X_true,
+            theta_true=theta_true,
+            theta_0=theta_0,
+            n_samples_per_theta=n_samples_per_theta,
+            initial_idx=initial_idx,
+            ratio_model=ratio_model,
+            total_param_grid=total_param_grid
+        )
+        self.ucb_kappa = ucb_kappa
+
+    def choose_next_theta_index(self, verbose=True):
+        nllr, std, mle = param_scan(
+            model=self.ratio_model,
+            X_true=self.X_true,
+            param_grid=self.param_grid,
+            return_std=True,
+            to_meshgrid_shape=False,
+        )
+
+        acquisition_fn = - nllr + self.ucb_kappa*std
+        acquisition_fn[self._trialed_idx] = -np.inf  # don't pick the same point twice
+        next_idx = acquisition_fn.argmax()
+
+        self._nllr_predictions.append(pd.DataFrame(dict(nllr=nllr, std=std)))
+        self._mle_predictions.append(mle)
+
+        if verbose:
+            print(f'MLE estimate: {mle:.3f}; next theta {self.all_thetas[next_idx]}')
+
+        return next_idx
+
+
+class RandomActiveLearner(ActiveLearner):
+
+    # TODO: maybe allow calibration?
+
+    def choose_next_theta_index(self, verbose=True) -> int:
+        nllr, mle = param_scan(
+            model=self.ratio_model,
+            X_true=self.X_true,
+            param_grid=self.param_grid,
+            return_std=True,
+            to_meshgrid_shape=False,
+        )
+        next_idx = np.random.choice(self._untrialed_idx)
+
+        self._nllr_predictions.append(pd.DataFrame(dict(nllr=nllr)))
+        self._mle_predictions.append(mle)
+
+        if verbose:
+            print(f'MLE estimate: {mle:.3f}; next theta {self.all_thetas[next_idx]}')
+
+        return next_idx
