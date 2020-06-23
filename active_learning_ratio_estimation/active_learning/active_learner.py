@@ -31,8 +31,8 @@ class ActiveLearner:
         self.param_grid = total_param_grid
 
         self._trialed_idx = initial_idx
-        self._nllr_predictions = []
-        self._mle_predictions = []
+        self.nllr_predictions = []
+        self.mle_predictions = []
 
         initial_theta_1s = ParamIterator([total_param_grid[idx] for idx in initial_idx])
         self.dataset = SinglyParameterizedRatioDataset.from_simulator(
@@ -143,8 +143,8 @@ class UpperConfidenceBoundLearner(ActiveLearner):
         acquisition_fn[self._trialed_idx] = -np.inf  # don't pick the same point twice
         next_idx = acquisition_fn.argmax()
 
-        self._nllr_predictions.append(pd.DataFrame(dict(nllr=nllr, std=std)))
-        self._mle_predictions.append(mle)
+        self.nllr_predictions.append(pd.DataFrame(dict(nllr=nllr, std=std)))
+        self.mle_predictions.append(mle)
 
         if verbose:
             print(f'MLE estimate: {mle}; next theta {self.all_thetas[next_idx]}')
@@ -166,8 +166,8 @@ class RandomActiveLearner(ActiveLearner):
         )
         next_idx = np.random.choice(self._untrialed_idx)
 
-        self._nllr_predictions.append(pd.DataFrame(dict(nllr=nllr)))
-        self._mle_predictions.append(mle)
+        self.nllr_predictions.append(pd.DataFrame(dict(nllr=nllr)))
+        self.mle_predictions.append(mle)
 
         if verbose:
             print(f'MLE estimate: {mle}; next theta {self.all_thetas[next_idx]}')
