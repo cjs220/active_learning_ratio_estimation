@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from active_learning_ratio_estimation.dataset import ParamGrid, SinglyParameterizedRatioDataset, \
-    SingleParamIterator
+    SingleParamIterator, ParamIterator
 from active_learning_ratio_estimation.model import SinglyParameterizedRatioModel
 from active_learning_ratio_estimation.model.ratio_model import exact_param_scan, param_scan
 
@@ -34,7 +34,7 @@ class ActiveLearner:
         self._nllr_predictions = []
         self._mle_predictions = []
 
-        initial_theta_1s = total_param_grid[initial_idx]
+        initial_theta_1s = ParamIterator([total_param_grid[idx] for idx in initial_idx])
         self.dataset = SinglyParameterizedRatioDataset.from_simulator(
             simulator_func=simulator_func,
             theta_0=theta_0,
@@ -83,7 +83,7 @@ class ActiveLearner:
         self._trialed_idx.append(next_theta_index)
 
     def model_fit(self):
-        self.ratio_model.fit(X=np.ndarray, theta_1s=self.dataset.theta_1s, y=self.dataset.y)
+        self.ratio_model.fit(X=self.dataset.x, theta_1s=self.dataset.theta_1s, y=self.dataset.y)
 
     def choose_next_theta_index(self, verbose=True) -> int:
         raise NotImplementedError
@@ -147,7 +147,7 @@ class UpperConfidenceBoundLearner(ActiveLearner):
         self._mle_predictions.append(mle)
 
         if verbose:
-            print(f'MLE estimate: {mle:.3f}; next theta {self.all_thetas[next_idx]}')
+            print(f'MLE estimate: {mle}; next theta {self.all_thetas[next_idx]}')
 
         return next_idx
 
@@ -161,7 +161,7 @@ class RandomActiveLearner(ActiveLearner):
             model=self.ratio_model,
             X_true=self.X_true,
             param_grid=self.param_grid,
-            return_std=True,
+            return_std=False,
             to_meshgrid_shape=False,
         )
         next_idx = np.random.choice(self._untrialed_idx)
@@ -170,6 +170,6 @@ class RandomActiveLearner(ActiveLearner):
         self._mle_predictions.append(mle)
 
         if verbose:
-            print(f'MLE estimate: {mle:.3f}; next theta {self.all_thetas[next_idx]}')
+            print(f'MLE estimate: {mle}; next theta {self.all_thetas[next_idx]}')
 
         return next_idx
