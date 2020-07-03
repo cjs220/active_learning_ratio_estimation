@@ -153,7 +153,7 @@ class UpperConfidenceBoundLearner(ActiveLearner):
             to_meshgrid_shape=False,
         )
         self.nllr_predictions.append(nllr)
-        self.nllr_std.append(nllr)
+        self.nllr_std.append(std)
         self.mle_predictions.append(mle)
         return mle
 
