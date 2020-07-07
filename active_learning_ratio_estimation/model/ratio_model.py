@@ -129,7 +129,7 @@ def param_scan(
 
         if return_std:
             logr, std = logr
-            std = (std**2).sum().sqrt()  # adding Gaussian uncertainties in quadrature
+            std = np.sqrt((std**2).sum())  # adding Gaussian uncertainties in quadrature
             stds.append(std)
 
         # predict nllr over the whole dataset x for each theta
