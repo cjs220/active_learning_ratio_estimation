@@ -76,7 +76,6 @@ class ActiveLearner:
         next_theta_index = self._choose_next_theta_index()
         if self.verbose:
             print(f'Next theta: {self.all_thetas[next_theta_index]}')
-        assert next_theta_index not in self._trialed_idx
         return next_theta_index
 
     def predict(self):
@@ -99,7 +98,7 @@ class ActiveLearner:
 
     @property
     def _untrialed_idx(self):
-        return np.delete(np.arange(len(self.all_thetas)), self._trialed_idx, axis=0).tolist()
+        return np.delete(np.arange(len(self.all_thetas)), set(self._trialed_idx), axis=0).tolist()
 
     def _predict(self) -> np.ndarray:
         raise NotImplementedError
@@ -119,11 +118,11 @@ class UpperConfidenceBoundLearner(ActiveLearner):
                  initial_idx: List[int],
                  ratio_model: SinglyParameterizedRatioModel,
                  total_param_grid: ParamGrid,
-                 ucb_kappa: float = 1.0,
+                 kappa: float = 1.0,
                  verbose: bool = True
                  ):
         self.nllr_std = []
-        self.ucb_kappa = ucb_kappa
+        self.kappa = kappa
         super().__init__(
             simulator_func=simulator_func,
             X_true=X_true,
@@ -139,8 +138,7 @@ class UpperConfidenceBoundLearner(ActiveLearner):
     def _choose_next_theta_index(self) -> int:
         nllr = self.nllr_predictions[-1]
         std = self.nllr_std[-1]
-        acquisition_fn = - nllr + self.ucb_kappa*std
-        acquisition_fn[self._trialed_idx] = -np.inf  # don't pick the same point twice
+        acquisition_fn = - nllr + self.kappa * std
         next_idx = acquisition_fn.argmax()
         return next_idx
 
@@ -158,11 +156,22 @@ class UpperConfidenceBoundLearner(ActiveLearner):
         return mle
 
 
+class ModifiedUCBLearner(UpperConfidenceBoundLearner):
+
+    def _choose_next_theta_index(self) -> int:
+        nllr = self.nllr_predictions[-1]
+        std = self.nllr_std[-1]
+        test_stat = 2*(nllr - nllr.min())
+        acquisition_fn = std/(1 + test_stat / (self.kappa * std))
+        next_idx = acquisition_fn.argmax()
+        return next_idx
+
+
 class RandomActiveLearner(ActiveLearner):
     # TODO: maybe allow calibration?
 
     def _choose_next_theta_index(self) -> int:
-        return np.random.choice(self._untrialed_idx)
+        return np.random.randint(len(self.param_grid))
 
     def _predict(self) -> np.ndarray:
         nllr, mle = param_scan(
