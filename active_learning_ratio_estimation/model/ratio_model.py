@@ -16,15 +16,28 @@ class BaseRatioModel:
         self.clf = clf
 
     def _fit(self, X: np.ndarray, y: np.ndarray, **fit_params):
-        self.clf.fit(X, y, **fit_params)
+        self.clf.fit(X, y, **fit_params)  # TODO
         return self
 
-    def _predict(self, X: np.ndarray, log=False, **predict_params):
-        y_prob = self.clf.predict_proba(X, **predict_params)[:, 1]
+    def _predict(self, X: np.ndarray, log=False, return_std=False, **predict_params):
         if log:
-            return estimated_log_likelihood_ratio(y_prob)
+            if hasattr(self.clf, 'predict_logits'):
+                prediction = self._predict_log_from_logits(X=X, return_std=return_std, **predict_params)
+            else:
+                assert not return_std
+                y_prob = self.clf.predict_proba(X=X, **predict_params)[:, 1]
+                prediction = estimated_log_likelihood_ratio(y_prob)
         else:
-            return estimated_likelihood_ratio(y_prob)
+            assert not return_std
+            y_prob = self.clf.predict_proba(X=X, **predict_params)[:, 1]
+            prediction = estimated_likelihood_ratio(y_prob)
+        return prediction
+
+    def _predict_log_from_logits(self, X: np.ndarray, return_std: bool, **predict_params):
+        if return_std:
+            predict_params['return_std'] = True
+
+        return self.clf.predict_logits(X=X, **predict_params)
 
 
 class UnparameterizedRatioModel(BaseRatioModel):
@@ -97,22 +110,45 @@ def param_scan(
         model: SinglyParameterizedRatioModel,
         X_true: np.ndarray,
         param_grid: ParamGrid,
+        return_std: bool = False,
+        to_meshgrid_shape: bool = True,
         verbose: bool = False,
         **predict_params
 ):
     nllr = []
+
+    if return_std:
+        stds = []
+        predict_params['return_std'] = True
+
     iterator = tqdm(param_grid) if verbose else param_grid
     for theta in iterator:
         # predict nllr for individual data points
         theta_1s = stack_repeat(theta, len(X_true))
         logr = model.predict(X_true, theta_1s=theta_1s, log=True, **predict_params)
+
+        if return_std:
+            logr, std = logr
+            std = np.sqrt((std**2).sum())  # adding Gaussian uncertainties in quadrature
+            stds.append(std)
+
         # predict nllr over the whole dataset x for each theta
         nllr_pred = -logr.sum()
         nllr.append(nllr_pred)
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    if return_std:
+        stds = np.array(stds)
+        if to_meshgrid_shape:
+            stds = _to_meshgrid_shape(stds, param_grid)
+        return nllr, stds, mle
+
+    else:
+        return nllr, mle
 
 
 def calibrated_param_scan(
@@ -122,6 +158,7 @@ def calibrated_param_scan(
         simulator_func: Callable,
         n_samples_per_theta: int,
         calibration_params: Dict,
+        to_meshgrid_shape: bool = True,
         verbose: bool = False,
 ) -> Sequence[np.ndarray]:
     nllr = []
@@ -141,14 +178,19 @@ def calibrated_param_scan(
 
     nllr = np.array(nllr)
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    return nllr, mle
 
 
 def exact_param_scan(
         simulator_func: Callable,
         X_true: np.ndarray,
         param_grid: ParamGrid,
-        theta_0: float
+        theta_0: float,
+        to_meshgrid_shape: bool = True
 ) -> Sequence[np.ndarray]:
 
     p_0 = build_simulator(simulator_func=simulator_func, theta=theta_0)
@@ -161,7 +203,11 @@ def exact_param_scan(
 
     nllr = np.array([exact_nllr(theta.squeeze()).numpy() for theta in param_grid])
     mle = param_grid[np.argmin(nllr)]
-    return _to_meshgrid_shape(nllr, param_grid), mle
+
+    if to_meshgrid_shape:
+        nllr = _to_meshgrid_shape(nllr, param_grid)
+
+    return nllr, mle
 
 
 def _to_meshgrid_shape(arr: np.ndarray, param_grid: ParamGrid):
