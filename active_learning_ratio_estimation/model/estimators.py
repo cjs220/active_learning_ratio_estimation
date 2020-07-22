@@ -108,7 +108,7 @@ class BaseBayesianWrapper(BaseWrapper, ABC):
 
     def predict_logits(self, X, samples=100, return_std=False, **predict_params) -> np.ndarray:
         logits_samples = self.sample_predictive_distribution(X, samples=samples, **predict_params)
-        mean_logits = logits_samples.mean(axis=1)
+        mean_logits = np.median(logits_samples, axis=1)
         if return_std:
             std = logits_samples.std(axis=1, ddof=1)
             return mean_logits, std
@@ -118,7 +118,7 @@ class BaseBayesianWrapper(BaseWrapper, ABC):
     def predict_proba(self, X: np.ndarray, samples=100, return_std=False, **predict_params):
         logits_samples = self.sample_predictive_distribution(X=X, samples=samples, **predict_params)
         probs_samples = tf.nn.sigmoid(logits_samples).numpy()
-        probs = probs_samples.mean(axis=1)
+        probs = np.median(probs_samples, axis=1)
         probs = np.stack([1 - probs, probs], axis=1)
         if return_std:
             std = probs_samples.std(axis=1, ddof=1)

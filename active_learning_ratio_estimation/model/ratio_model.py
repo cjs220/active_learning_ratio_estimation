@@ -19,7 +19,7 @@ class BaseRatioModel:
         self.clf.fit(X, y, **fit_params)  # TODO
         return self
 
-    def _predict(self, X: np.ndarray, log=False, return_std=False, **predict_params):
+    def _predict(self, X: np.ndarray, log=True, return_std=False, **predict_params):
         if log:
             if hasattr(self.clf, 'predict_logits'):
                 prediction = self._predict_log_from_logits(X=X, return_std=return_std, **predict_params)
@@ -58,7 +58,7 @@ class UnparameterizedRatioModel(BaseRatioModel):
     def fit(self, X: np.ndarray, y: np.ndarray, **fit_params):
         return self._fit(X, y, **fit_params)
 
-    def predict(self, X: np.ndarray, log=False, **predict_params):
+    def predict(self, X: np.ndarray, log=True, **predict_params):
         return self._predict(X, log=log, **predict_params)
 
 
@@ -76,7 +76,7 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
         model_input = build_singly_parameterized_input(X, theta_1s)
         return self._fit(model_input, y, **fit_params)
 
-    def predict(self, X: np.ndarray, theta_1s: np.ndarray, log=False, **predict_params):
+    def predict(self, X: np.ndarray, theta_1s: np.ndarray, log=True, **predict_params):
         model_input = build_singly_parameterized_input(X, theta_1s)
         return self._predict(model_input, log=log, **predict_params)
 
@@ -86,7 +86,7 @@ class SinglyParameterizedRatioModel(BaseRatioModel):
                            n_samples_per_theta: int,
                            simulator_func: Callable,
                            calibration_params: Dict,
-                           log=False,
+                           log=True,
                            return_calibrated_model=False,
                            ):
         cal_clf = CalibratedClassifierCV(base_estimator=self.clf, cv='prefit', **calibration_params)
