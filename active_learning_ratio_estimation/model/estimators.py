@@ -132,8 +132,43 @@ class BaseBayesianWrapper(BaseWrapper, ABC):
 
 class DenseClassifier(BaseWrapper):
 
+    def __init__(self,
+                 l2_regularization: float = 0.0,
+                 n_hidden: Sequence[int] = (10, 10),
+                 scale_input: bool = True,
+                 activation: str = 'relu',
+                 optimizer: str = 'adam',
+                 run_eagerly: bool = False,
+                 epochs: int = 10,
+                 fit_batch_size: int = 32,
+                 validation_split: float = 0.2,
+                 validation_batch_size: int = 32,
+                 patience: int = 2,
+                 verbose: int = 2,
+                 predict_batch_size: int = 32,
+                 ):
+        self.l2_regularization = l2_regularization
+        super().__init__(
+            n_hidden=n_hidden,
+            scale_input=scale_input,
+            activation=activation,
+            optimizer=optimizer,
+            run_eagerly=run_eagerly,
+            epochs=epochs,
+            fit_batch_size=fit_batch_size,
+            validation_split=validation_split,
+            validation_batch_size=validation_batch_size,
+            patience=patience,
+            verbose=verbose,
+            predict_batch_size=predict_batch_size
+        )
+
     def get_keras_model(self):
-        return RegularDense(n_hidden=self.n_hidden, activation=self.activation)
+        return RegularDense(
+            n_hidden=self.n_hidden,
+            activation=self.activation,
+            l2_regularization=self.l2_regularization
+        )
 
 
 class FlipoutClassifier(BaseBayesianWrapper):
