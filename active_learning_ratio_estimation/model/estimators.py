@@ -24,13 +24,15 @@ class BaseWrapper(BaseEstimator, ABC):
                  patience: int = 2,
                  verbose: int = 2,
                  predict_batch_size: int = 32,
+                 label_smoothing: float = 0.0,
                  ):
         self.n_hidden = n_hidden
         self.scale_input = scale_input
         self.activation = activation
 
         # compile arguments
-        self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=True,
+                                                       label_smoothing=label_smoothing)
         self.optimizer = optimizer
         self.run_eagerly = run_eagerly
 
@@ -133,7 +135,7 @@ class DenseClassifier(BaseWrapper):
                  l2_regularization: float = 0.0,
                  n_hidden: Sequence[int] = (10, 10),
                  scale_input: bool = True,
-                 activation: str = 'relu',
+                 activation: str = 'tanh',
                  optimizer: str = 'adam',
                  run_eagerly: bool = False,
                  epochs: int = 10,
@@ -143,6 +145,7 @@ class DenseClassifier(BaseWrapper):
                  patience: int = 2,
                  verbose: int = 2,
                  predict_batch_size: int = 32,
+                 label_smoothing: float = 0.0,
                  ):
         self.l2_regularization = l2_regularization
         super().__init__(
@@ -157,7 +160,8 @@ class DenseClassifier(BaseWrapper):
             validation_batch_size=validation_batch_size,
             patience=patience,
             verbose=verbose,
-            predict_batch_size=predict_batch_size
+            predict_batch_size=predict_batch_size,
+            label_smoothing=label_smoothing
         )
 
     def get_keras_model(self):
