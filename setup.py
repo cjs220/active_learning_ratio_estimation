@@ -23,6 +23,7 @@ setup(
         "tqdm",
         "pandas>=1.0",
         "tensorflow>=2.0",
-        "tensorflow-probability>=0.8"
+        "tensorflow-probability>=0.8",
+        "cloudpickle<=1.4.1"
     ]
 )

@@ -99,9 +99,6 @@ class BaseWrapper(BaseEstimator, ABC):
 class BaseBayesianWrapper(BaseWrapper, ABC):
 
     def sample_predictive_distribution(self, X: np.ndarray, samples: int = 100, **predict_params) -> np.ndarray:
-        # get a number of samples from the predictive distribution
-        # The following implementation is not very memory efficient, but will likely be quicker for
-        # higher batch sizes; a lower RAM, but slower, implementation would be to iterate over samples
         X_tile = np.repeat(X, samples, axis=0)
         logits_samples = super().predict_logits(X_tile, **predict_params).reshape(len(X), samples)
         return logits_samples
