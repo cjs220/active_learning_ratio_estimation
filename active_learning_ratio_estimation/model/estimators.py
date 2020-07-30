@@ -24,15 +24,15 @@ class BaseWrapper(BaseEstimator, ABC):
                  patience: int = 2,
                  verbose: int = 2,
                  predict_batch_size: int = 32,
-                 label_smoothing: float = 0.0,
+                 label_smoothing: float = 0,
                  ):
         self.n_hidden = n_hidden
         self.scale_input = scale_input
         self.activation = activation
 
         # compile arguments
-        self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=True,
-                                                       label_smoothing=label_smoothing)
+        self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+                                                       # label_smoothing=label_smoothing)
         self.optimizer = optimizer
         self.run_eagerly = run_eagerly
 
